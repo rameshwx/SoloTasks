@@ -30,6 +30,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   bool _busyReminders = false;
   bool _busySubtasks = false;
   bool _busyTaskTags = false;
+  bool _busyDeleteTask = false;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +93,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               _attachmentSection(context, attachmentsState),
               const SizedBox(height: 18),
               _notesSection(context, task, timeFormat),
+              const SizedBox(height: 18),
+              _deleteTaskAction(context, task),
             ],
           ),
         ),
@@ -1008,6 +1011,71 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       _snack('Reminder deleted');
     } catch (error) {
       _snack('Reminder delete failed: $error');
+    }
+  }
+
+  Widget _deleteTaskAction(BuildContext context, TaskViewModel task) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _busyDeleteTask ? null : () => _confirmDeleteTask(task),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.danger,
+          side: BorderSide(
+            color: AppPalette.danger.withValues(alpha: 0.45),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        icon: _busyDeleteTask
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.delete_forever_rounded),
+        label: Text(_busyDeleteTask ? 'Deleting...' : 'Delete Task'),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteTask(TaskViewModel task) async {
+    final shouldDelete = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Delete Task'),
+              content: Text(
+                'Delete "${task.title}" and all related subtasks, reminders, and attachments?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppPalette.danger,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!shouldDelete || !mounted) return;
+
+    setState(() => _busyDeleteTask = true);
+    try {
+      await ref.read(taskListProvider.notifier).deleteTask(task.id);
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+    } catch (error) {
+      _snack('Failed to delete task: $error');
+    } finally {
+      if (mounted) setState(() => _busyDeleteTask = false);
     }
   }
 

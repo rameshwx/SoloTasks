@@ -160,6 +160,68 @@ class TaskListController extends StateNotifier<List<TaskViewModel>> {
     await _attemptSync();
   }
 
+  Future<void> deleteTask(String taskId) async {
+    final exists = state.any((task) => task.id == taskId);
+    if (!exists) return;
+
+    state = [
+      for (final task in state)
+        if (task.id != taskId) task,
+    ];
+
+    final db = _ref.read(appDatabaseProvider);
+    final now = DateTime.now().toUtc();
+
+    await db.transaction(() async {
+      final subtasksForTask = await (db.select(db.subtasks)
+            ..where((tbl) => tbl.taskId.equals(taskId)))
+          .get();
+      final subtaskIds = subtasksForTask.map((item) => item.id).toList();
+
+      await (db.update(db.tasks)..where((tbl) => tbl.id.equals(taskId))).write(
+        TasksCompanion(
+          deletedAt: Value(now),
+          updatedAt: Value(now),
+        ),
+      );
+
+      if (subtaskIds.isNotEmpty) {
+        await (db.delete(db.reminders)
+              ..where((tbl) =>
+                  tbl.targetType.equals('subtask') &
+                  tbl.targetId.isIn(subtaskIds)))
+            .go();
+      }
+
+      await (db.delete(db.subtasks)..where((tbl) => tbl.taskId.equals(taskId)))
+          .go();
+      await (db.delete(db.attachments)
+            ..where((tbl) => tbl.taskId.equals(taskId)))
+          .go();
+      await (db.delete(db.taskTags)..where((tbl) => tbl.taskId.equals(taskId)))
+          .go();
+      await (db.delete(db.reminders)
+            ..where((tbl) =>
+                tbl.targetType.equals('task') & tbl.targetId.equals(taskId)))
+          .go();
+
+      await db.into(db.outboxOps).insert(
+            OutboxOpsCompanion.insert(
+              id: _uuid.v4(),
+              opId: _uuid.v4(),
+              entity: 'task',
+              action: 'delete',
+              entityId: taskId,
+              payloadJson: jsonEncode(<String, dynamic>{}),
+              clientTs: now,
+              retryCount: const Value(0),
+            ),
+          );
+    });
+
+    await _attemptSync();
+  }
+
   Future<void> _upsertTaskLocally({
     required TaskViewModel task,
     required DateTime now,

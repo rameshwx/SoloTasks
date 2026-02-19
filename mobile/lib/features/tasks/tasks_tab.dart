@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/logic/time_format.dart';
 import '../../core/models/app_models.dart';
@@ -316,99 +317,105 @@ class _ResultTaskTile extends ConsumerWidget {
         hasSubtasks ? ((doneSubtasks / totalSubtasks) * 100).round() : 0;
     final isDone = task.status == TaskStatus.done;
 
-    return GlassContainer(
-      borderRadius: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => _toggleComplete(ref, context, isDone),
-            icon: Icon(
-              isDone
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: isDone ? AppPalette.success : const Color(0xFF738B96),
-              size: 30,
+    return InkWell(
+      borderRadius: BorderRadius.circular(28),
+      onTap: () => context.push('/task/${task.id}'),
+      child: GlassContainer(
+        borderRadius: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => _toggleComplete(ref, context, isDone),
+              icon: Icon(
+                isDone
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: isDone ? AppPalette.success : const Color(0xFF738B96),
+                size: 30,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(task.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          decoration:
-                              isDone ? TextDecoration.lineThrough : null,
-                          color: isDone ? Theme.of(context).subduedText : null,
-                        )),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.schedule_rounded,
-                        size: 16, color: Theme.of(context).subduedText),
-                    const SizedBox(width: 4),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(task.title,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            decoration:
+                                isDone ? TextDecoration.lineThrough : null,
+                            color:
+                                isDone ? Theme.of(context).subduedText : null,
+                          )),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.schedule_rounded,
+                          size: 16, color: Theme.of(context).subduedText),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatTime(context, task.startMin, timeFormat),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: task.status == TaskStatus.blocked
+                                  ? AppPalette.danger
+                                  : AppPalette.teal,
+                            ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                          width: 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: Theme.of(context).subduedText,
+                              shape: BoxShape.circle)),
+                      const SizedBox(width: 8),
+                      Icon(Icons.folder_outlined,
+                          size: 16, color: Theme.of(context).subduedText),
+                      const SizedBox(width: 4),
+                      Text(displayTags.isEmpty ? 'General' : _tagSummary(),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(color: Theme.of(context).subduedText)),
+                    ],
+                  ),
+                  if (hasSubtasks) ...[
+                    const SizedBox(height: 6),
                     Text(
-                      _formatTime(context, task.startMin, timeFormat),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: task.status == TaskStatus.blocked
-                                ? AppPalette.danger
-                                : AppPalette.teal,
+                      'Tasks $doneSubtasks/$totalSubtasks : $percent% completed',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).subduedText,
+                            fontWeight: FontWeight.w600,
                           ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                            color: Theme.of(context).subduedText,
-                            shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    Icon(Icons.folder_outlined,
-                        size: 16, color: Theme.of(context).subduedText),
-                    const SizedBox(width: 4),
-                    Text(displayTags.isEmpty ? 'General' : _tagSummary(),
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyLarge
-                            ?.copyWith(color: Theme.of(context).subduedText)),
                   ],
-                ),
-                if (hasSubtasks) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tasks $doneSubtasks/$totalSubtasks : $percent% completed',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).subduedText,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
                 ],
-              ],
-            ),
-          ),
-          if (task.hasAttachment)
-            Icon(Icons.attach_file_rounded,
-                color: Theme.of(context).subduedText)
-          else
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppPalette.success.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(
-                    color: AppPalette.success.withValues(alpha: 0.35)),
               ),
-              child: Text(
-                displayTags.isEmpty ? 'General' : _tagSummary(),
-                style: const TextStyle(
-                  color: AppPalette.success,
-                  fontWeight: FontWeight.w700,
+            ),
+            if (task.hasAttachment)
+              Icon(Icons.attach_file_rounded,
+                  color: Theme.of(context).subduedText)
+            else
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppPalette.success.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(
+                      color: AppPalette.success.withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  displayTags.isEmpty ? 'General' : _tagSummary(),
+                  style: const TextStyle(
+                    color: AppPalette.success,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
