@@ -71,7 +71,7 @@ class TodayTab extends ConsumerWidget {
                         icon: Icons.celebration,
                         label: 'Holiday',
                         value: holidays.first.name.toUpperCase(),
-                        tint: AppPalette.success,
+                        tint: AppPalette.danger,
                       ),
                     ],
                   ],
@@ -91,19 +91,19 @@ class TodayTab extends ConsumerWidget {
                   borderRadius: 20,
                   padding: const EdgeInsets.all(14),
                   tint: Theme.of(context).isDark
-                      ? AppPalette.teal.withValues(alpha: 0.10)
-                      : AppPalette.teal.withValues(alpha: 0.17),
+                      ? AppPalette.danger.withValues(alpha: 0.10)
+                      : AppPalette.danger.withValues(alpha: 0.17),
                   child: Row(
                     children: [
                       Container(
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: AppPalette.teal.withValues(alpha: 0.2),
+                          color: AppPalette.danger.withValues(alpha: 0.2),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(Icons.beach_access_rounded,
-                            color: AppPalette.teal),
+                            color: AppPalette.danger),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -112,7 +112,10 @@ class TodayTab extends ConsumerWidget {
                           style: Theme.of(context)
                               .textTheme
                               .titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppPalette.danger,
+                              ),
                         ),
                       ),
                     ],
