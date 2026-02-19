@@ -1,0 +1,491 @@
+openapi: 3.1.0
+info:
+  title: SoloTasks API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+  - url: http://localhost:8000
+paths:
+  /v1/auth/request-otp:
+    post:
+      tags: [auth]
+      summary: Request OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: OTP created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cooldownSec: { type: integer }
+                  expiresAt: { type: string, format: date-time }
+  /v1/auth/verify-otp:
+    post:
+      tags: [auth]
+      summary: Verify OTP and create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpInput'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New access token
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Logged out
+
+  /v1/sync/push:
+    post:
+      tags: [sync]
+      summary: Push queued operations
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushInput'
+      responses:
+        '200':
+          description: Push result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushResponse'
+
+  /v1/sync/pull:
+    get:
+      tags: [sync]
+      summary: Pull changes by cursor
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: integer, default: 0 }
+        - in: query
+          name: deviceId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 500 }
+      responses:
+        '200':
+          description: Pulled changes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPullResponse'
+
+  /v1/tasks:
+    get:
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Task' }
+    post:
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCreate' }
+      responses:
+        '201':
+          description: Task created
+
+  /v1/tasks/{taskId}:
+    put:
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskUpdate' }
+      responses:
+        '200':
+          description: Task updated
+    delete:
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Task deleted }
+
+  /v1/tasks/series:
+    post:
+      tags: [tasks]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskSeriesCreate' }
+      responses:
+        '201': { description: Series created }
+
+  /v1/tasks/{taskId}/subtasks:
+    get:
+      tags: [subtasks]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Subtask list }
+    post:
+      tags: [subtasks]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubtaskCreate' }
+      responses:
+        '201': { description: Subtask created }
+
+  /v1/tags:
+    get:
+      tags: [tags]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Tag list }
+    post:
+      tags: [tags]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Tag created }
+
+  /v1/reminders:
+    get:
+      tags: [reminders]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Reminder list }
+    post:
+      tags: [reminders]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Reminder created }
+
+  /v1/tasks/{taskId}/attachments:
+    get:
+      tags: [attachments]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Attachment list }
+    post:
+      tags: [attachments]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Attachment created }
+
+  /v1/attachments/upload-init:
+    post:
+      tags: [attachments]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadInitInput' }
+      responses:
+        '200':
+          description: Upload descriptor
+
+  /v1/attachments/{id}/download:
+    get:
+      tags: [attachments]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: File stream or redirect }
+
+  /v1/holidays:
+    get:
+      tags: [holidays]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: year
+          schema: { type: integer }
+        - in: query
+          name: type
+          schema: { type: string, enum: [bank, public, mercantile] }
+      responses:
+        '200': { description: Holiday list }
+    post:
+      tags: [holidays]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Holiday created }
+
+  /v1/export/json:
+    get:
+      tags: [export-import]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Full JSON snapshot }
+  /v1/export/csv:
+    get:
+      tags: [export-import]
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: CSV }
+  /v1/export/ics:
+    get:
+      tags: [export-import]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: includeHolidays
+          schema: { type: boolean, default: false }
+      responses:
+        '200': { description: ICS }
+  /v1/import/json:
+    post:
+      tags: [export-import]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: mode
+          schema: { type: string, enum: [replace_all] }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: Imported }
+  /v1/import/csv:
+    post:
+      tags: [export-import]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200': { description: Imported }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    VerifyOtpInput:
+      type: object
+      required: [email, otp, deviceId]
+      properties:
+        email: { type: string, format: email }
+        otp: { type: string }
+        deviceId: { type: string }
+        deviceName: { type: string }
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        timezone: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            timezone: { type: string }
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        date_local: { type: string, format: date }
+        start_min: { type: integer }
+        end_min: { type: integer, nullable: true }
+        duration_min: { type: integer, nullable: true }
+        series_id: { type: string, nullable: true }
+        series_index: { type: integer, nullable: true }
+        series_total: { type: integer, nullable: true }
+    TaskCreate:
+      type: object
+      required: [title, dateLocal, startMin]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        dateLocal: { type: string, format: date }
+        startMin: { type: integer }
+        endMin: { type: integer }
+        durationMin: { type: integer }
+    TaskUpdate:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        dateLocal: { type: string, format: date }
+        startMin: { type: integer }
+        endMin: { type: integer }
+        durationMin: { type: integer }
+    TaskSeriesCreate:
+      type: object
+      required: [baseTitle, startDate, startMin]
+      properties:
+        baseTitle: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [todo, in_progress, blocked, done] }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        numberOfDays: { type: integer }
+        startMin: { type: integer }
+        endMin: { type: integer }
+        durationMin: { type: integer }
+    SubtaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        isDone: { type: boolean }
+        orderKey: { type: string }
+        note: { type: string }
+    UploadInitInput:
+      type: object
+      required: [taskId, fileName, mimeType, size]
+      properties:
+        taskId: { type: string }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer }
+    SyncPushInput:
+      type: object
+      required: [deviceId, ops]
+      properties:
+        deviceId: { type: string }
+        ops:
+          type: array
+          items:
+            type: object
+            properties:
+              opId: { type: string }
+              entity: { type: string }
+              action: { type: string }
+              entityId: { type: string }
+              payload: { type: object }
+              clientTs: { type: string, format: date-time }
+    SyncPushResponse:
+      type: object
+      properties:
+        serverTime: { type: string, format: date-time }
+        appliedCount: { type: integer }
+        rejectedOps:
+          type: array
+          items:
+            type: object
+            properties:
+              opId: { type: string }
+              reason: { type: string }
+    SyncPullResponse:
+      type: object
+      properties:
+        cursor: { type: integer }
+        serverTime: { type: string, format: date-time }
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              seq: { type: integer }
+              entity: { type: string }
+              action: { type: string }
+              entityId: { type: string }
+              record: { type: object }
+              deletedMeta: { type: object }

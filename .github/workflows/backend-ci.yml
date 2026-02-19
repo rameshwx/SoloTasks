@@ -1,0 +1,49 @@
+name: backend-ci
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: solotasks
+          POSTGRES_USER: solotasks
+          POSTGRES_PASSWORD: solotasks
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U solotasks"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+psycopg://solotasks:solotasks@localhost:5432/solotasks
+          JWT_SECRET: test-secret
+          SMTP_HOST: localhost
+          SMTP_PORT: '1025'
+          OTP_FROM_EMAIL: no-reply@example.com
+          STORAGE_PROVIDER: local
+        run: |
+          cd backend
+          pytest -q
