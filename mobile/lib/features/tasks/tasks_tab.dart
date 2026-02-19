@@ -368,7 +368,7 @@ class _ResultTaskTile extends ConsumerWidget {
                     Icon(Icons.folder_outlined,
                         size: 16, color: Theme.of(context).subduedText),
                     const SizedBox(width: 4),
-                    Text(displayTags.isEmpty ? 'General' : displayTags.first,
+                    Text(displayTags.isEmpty ? 'General' : _tagSummary(),
                         style: Theme.of(context)
                             .textTheme
                             .bodyLarge
@@ -400,13 +400,23 @@ class _ResultTaskTile extends ConsumerWidget {
                 border: Border.all(
                     color: AppPalette.success.withValues(alpha: 0.35)),
               ),
-              child: const Text('Finance',
-                  style: TextStyle(
-                      color: AppPalette.success, fontWeight: FontWeight.w700)),
+              child: Text(
+                displayTags.isEmpty ? 'General' : _tagSummary(),
+                style: const TextStyle(
+                  color: AppPalette.success,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
         ],
       ),
     );
+  }
+
+  String _tagSummary() {
+    if (displayTags.isEmpty) return 'General';
+    if (displayTags.length == 1) return displayTags.first;
+    return '${displayTags.first} +${displayTags.length - 1}';
   }
 
   Future<void> _toggleComplete(

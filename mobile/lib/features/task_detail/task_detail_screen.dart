@@ -83,7 +83,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                 timeFormat,
               ),
               const SizedBox(height: 18),
-              _taskTagSection(context, taskTagsState, allTagsState),
+              _taskTagSection(context, task, taskTagsState, allTagsState),
               const SizedBox(height: 18),
               _subtaskSection(context, task, subtasksState),
               const SizedBox(height: 18),
@@ -205,6 +205,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
 
   Widget _taskTagSection(
     BuildContext context,
+    TaskViewModel task,
     AsyncValue<List<TagItem>> taskTagsState,
     AsyncValue<List<TagItem>> allTagsState,
   ) {
@@ -259,7 +260,13 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             ),
           ),
           data: (tags) {
-            if (tags.isEmpty) {
+            final fallbackTags = task.tags
+                .where((tag) => tag.trim().isNotEmpty)
+                .toSet()
+                .toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+            if (tags.isEmpty && fallbackTags.isEmpty) {
               return GlassContainer(
                 borderRadius: 20,
                 child: Text(
@@ -276,10 +283,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final tag in tags)
+                for (final tagName
+                    in tags.isNotEmpty ? tags.map((e) => e.name) : fallbackTags)
                   Chip(
                     avatar: const Icon(Icons.label_rounded, size: 16),
-                    label: Text(tag.name),
+                    label: Text(tagName),
                     visualDensity: VisualDensity.compact,
                   ),
               ],
