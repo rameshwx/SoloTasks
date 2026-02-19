@@ -93,3 +93,8 @@ class TaskSeriesCreateResponse(BaseModel):
     series_id: str = Field(alias="seriesId")
     total: int
     tasks: list[TaskOut]
+
+
+class TaskTagReplaceInput(BaseModel):
+    model_config = {"populate_by_name": True}
+    tag_ids: list[str] = Field(alias="tagIds")

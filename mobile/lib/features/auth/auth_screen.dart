@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/providers/api_provider.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
@@ -22,6 +27,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   bool _otpSent = false;
   int _cooldown = 0;
+  bool _submitting = false;
+  DateTime? _otpExpiresAt;
   Timer? _timer;
 
   @override
@@ -43,11 +50,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 430),
-              child: Padding(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Spacer(),
                     _buildBrand(theme),
                     const SizedBox(height: 20),
                     GlassContainer(
@@ -122,7 +131,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                 shadowColor:
                                     AppPalette.teal.withValues(alpha: 0.45),
                               ),
-                              onPressed: _otpSent ? _verifyOtp : _requestOtp,
+                              onPressed: _submitting
+                                  ? null
+                                  : (_otpSent ? _verifyOtp : _requestOtp),
                               icon: Icon(_otpSent
                                   ? Icons.lock_open_rounded
                                   : Icons.arrow_forward_rounded),
@@ -138,12 +149,22 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
-                                onPressed: _cooldown == 0 ? _requestOtp : null,
+                                onPressed: _cooldown == 0 && !_submitting
+                                    ? _requestOtp
+                                    : null,
                                 child: Text(_cooldown == 0
                                     ? 'Resend OTP'
                                     : 'Resend in ${_cooldown}s'),
                               ),
                             ),
+                          ],
+                          if (_otpSent && _otpExpiresAt != null) ...[
+                            Text(
+                              'Expires at ${_formatTime(_otpExpiresAt!.toLocal())}',
+                              style: theme.textTheme.labelMedium
+                                  ?.copyWith(color: theme.subduedText),
+                            ),
+                            const SizedBox(height: 6),
                           ],
                           const SizedBox(height: 6),
                           Divider(color: theme.dividerColor),
@@ -156,7 +177,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Code valid for 5 minutes. Check your spam folder if code does not arrive.',
+                                  'Code valid for 10 minutes. Check your spam folder if code does not arrive.',
                                   style: theme.textTheme.bodySmall
                                       ?.copyWith(color: theme.subduedText),
                                 ),
@@ -172,7 +193,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       style: theme.textTheme.bodySmall
                           ?.copyWith(color: theme.subduedText),
                     ),
-                    const Spacer(flex: 2),
                   ],
                 ),
               ),
@@ -211,18 +231,103 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _requestOtp() async {
-    if (_emailCtrl.text.trim().isEmpty) return;
-    setState(() {
-      _otpSent = true;
-      _cooldown = 60;
-    });
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      _showSnack('Enter a valid email address.');
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final response = await ref.read(apiClientProvider).requestOtp(email);
+      final data = _asMap(response.data);
+      final cooldown = _toInt(data['cooldownSec']) ?? 60;
+      final expiresAt = _parseDateTime(data['expiresAt']);
+
+      if (!mounted) return;
+      setState(() {
+        _otpSent = true;
+        _cooldown = math.max(cooldown, 0);
+        _otpExpiresAt = expiresAt;
+      });
+      _startCooldownTicker();
+      HapticFeedback.lightImpact();
+      _showSnack('OTP sent to $email');
+    } on DioException catch (error) {
+      final cooldown = _extractCooldown(error);
+      if (mounted && cooldown != null) {
+        setState(() {
+          _otpSent = true;
+          _cooldown = math.max(cooldown, 0);
+        });
+        _startCooldownTicker();
+      }
+      _showSnack(_extractErrorMessage(error));
+    } catch (_) {
+      _showSnack('Unable to request OTP right now.');
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final email = _emailCtrl.text.trim();
+    final otp = _otpCtrl.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      _showSnack('Enter a valid email address.');
+      return;
+    }
+    if (otp.length < 6) {
+      _showSnack('Enter the 6-digit OTP.');
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final sessionService = ref.read(sessionServiceProvider);
+      final deviceId = await sessionService.getOrCreateDeviceId();
+      final deviceName = _deviceName();
+      final response = await ref.read(apiClientProvider).verifyOtp(
+            email: email,
+            otp: otp,
+            deviceId: deviceId,
+            deviceName: deviceName,
+          );
+      final data = _asMap(response.data);
+      final accessToken = data['accessToken']?.toString() ?? '';
+      final refreshToken = data['refreshToken']?.toString() ?? '';
+      if (accessToken.isEmpty || refreshToken.isEmpty) {
+        _showSnack('Invalid auth response from server.');
+        return;
+      }
+
+      await ref.read(authControllerProvider.notifier).loginWithOtp(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+          );
+      HapticFeedback.mediumImpact();
+    } on DioException catch (error) {
+      _showSnack(_extractErrorMessage(error));
+    } catch (_) {
+      _showSnack('Unable to verify OTP right now.');
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  void _startCooldownTicker() {
     _timer?.cancel();
+    if (_cooldown <= 0) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      if (_cooldown == 0) {
+      if (_cooldown <= 0) {
         timer.cancel();
       } else {
         setState(() => _cooldown--);
@@ -230,11 +335,69 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     });
   }
 
-  Future<void> _verifyOtp() async {
-    if (_otpCtrl.text.trim().length < 4) return;
-    await ref.read(authControllerProvider.notifier).loginWithOtp(
-          accessToken: 'demo-access',
-          refreshToken: 'demo-refresh',
-        );
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return data.cast<String, dynamic>();
+    return const <String, dynamic>{};
+  }
+
+  int? _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  DateTime? _parseDateTime(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
+
+  int? _extractCooldown(DioException error) {
+    final payload = error.response?.data;
+    if (payload is Map) {
+      final detail = payload['detail'];
+      if (detail is Map) {
+        return _toInt(detail['cooldownSec']);
+      }
+      return _toInt(payload['cooldownSec']);
+    }
+    return null;
+  }
+
+  String _extractErrorMessage(DioException error) {
+    final payload = error.response?.data;
+    if (payload is Map) {
+      final detail = payload['detail'];
+      if (detail is String && detail.isNotEmpty) {
+        return detail;
+      }
+      if (detail is Map) {
+        final cooldown = _toInt(detail['cooldownSec']);
+        if (cooldown != null) {
+          return 'Please wait ${cooldown}s before requesting another OTP.';
+        }
+      }
+    }
+    return error.message ?? 'Request failed.';
+  }
+
+  String _deviceName() {
+    final platform = Platform.operatingSystem;
+    final version = Platform.operatingSystemVersion.split(' ').first;
+    return '$platform-$version';
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final hour = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }

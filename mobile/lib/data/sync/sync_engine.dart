@@ -18,7 +18,7 @@ class SyncEngine {
   final ApiClient apiClient;
   final Ref ref;
 
-  Future<void> sync({
+  Future<List<Map<String, dynamic>>> sync({
     required String accessToken,
     required String deviceId,
   }) async {
@@ -27,24 +27,28 @@ class SyncEngine {
     try {
       final queued = await database.select(database.outboxOps).get();
       final ops = queued
-          .map((op) => {
-                'opId': op.opId,
-                'entity': op.entity,
-                'action': op.action,
-                'entityId': op.entityId,
-                'payload': jsonDecode(op.payloadJson) as Map<String, dynamic>,
-                'clientTs': op.clientTs.toUtc().toIso8601String(),
-              })
+          .map(
+            (op) => {
+              'opId': op.opId,
+              'entity': op.entity,
+              'action': op.action,
+              'entityId': op.entityId,
+              'payload': jsonDecode(op.payloadJson) as Map<String, dynamic>,
+              'clientTs': op.clientTs.toUtc().toIso8601String(),
+            },
+          )
           .toList();
 
       if (ops.isNotEmpty) {
         await apiClient.syncPush(
-            accessToken: accessToken, deviceId: deviceId, ops: ops);
+          accessToken: accessToken,
+          deviceId: deviceId,
+          ops: ops,
+        );
         await database.delete(database.outboxOps).go();
       }
 
-      final syncStateRow =
-          await database.select(database.syncState).getSingleOrNull();
+      final syncStateRow = await database.select(database.syncState).getSingleOrNull();
       final cursor = syncStateRow?.cursor ?? 0;
 
       final pull = await apiClient.syncPull(
@@ -55,6 +59,10 @@ class SyncEngine {
 
       final body = pull.data as Map<String, dynamic>;
       final nextCursor = (body['cursor'] as num?)?.toInt() ?? cursor;
+      final rawChanges = body['changes'];
+      final changes = (rawChanges is List)
+          ? rawChanges.whereType<Map>().map((x) => x.cast<String, dynamic>()).toList()
+          : <Map<String, dynamic>>[];
 
       await database.into(database.syncState).insertOnConflictUpdate(
             SyncStateCompanion(
@@ -65,6 +73,7 @@ class SyncEngine {
           );
 
       ref.read(syncStatusProvider.notifier).state = SyncStatus.synced;
+      return changes;
     } catch (_) {
       ref.read(syncStatusProvider.notifier).state = SyncStatus.error;
       rethrow;

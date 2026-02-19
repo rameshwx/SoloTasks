@@ -8,6 +8,7 @@ import '../core/theme/app_palette.dart';
 import '../features/calendar/calendar_tab.dart';
 import '../features/settings/settings_tab.dart';
 import '../features/tasks/tasks_tab.dart';
+import '../features/today/quick_add_task_sheet.dart';
 import '../features/today/today_tab.dart';
 
 class AppShellScaffold extends StatefulWidget {
@@ -42,12 +43,7 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
       ).animate().fadeIn(duration: 220.ms),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: _GlowAddButton(
-        onPressed: () {
-          HapticFeedback.lightImpact();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Quick add task flow placeholder')),
-          );
-        },
+        onPressed: _openQuickAddSheet,
       ),
       bottomNavigationBar: _BottomGlassNav(
         currentIndex: _index,
@@ -56,6 +52,17 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
           setState(() => _index = next);
         },
       ),
+    );
+  }
+
+  Future<void> _openQuickAddSheet() async {
+    HapticFeedback.lightImpact();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const QuickAddTaskSheet(),
     );
   }
 }

@@ -31,3 +31,8 @@ Bottom navigation is fixed to:
 - `backend/`: API, migrations, tests, docker setup.
 - `mobile/`: Flutter app with local-first architecture.
 - `docs/`: Architecture, sync protocol, deployment, OpenAPI contract.
+
+## VPS automation
+
+- One-command bootstrap (targeting `51.255.201.31`) is available at `backend/deploy/bootstrap_51.255.201.31.sh`.
+- Full deployment steps are documented in `docs/deployment-vps.md`.

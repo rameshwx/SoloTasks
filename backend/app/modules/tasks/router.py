@@ -10,11 +10,13 @@ from app.core.deps import get_current_user
 from app.db import models
 from app.db.session import get_db
 from app.repositories.serializers import orm_to_dict
+from app.schemas.tags import TagOut
 from app.schemas.tasks import (
     TaskCreate,
     TaskOut,
     TaskSeriesCreate,
     TaskSeriesCreateResponse,
+    TaskTagReplaceInput,
     TaskUpdate,
 )
 from app.services.series_service import build_series_tasks
@@ -22,6 +24,28 @@ from app.services.sync_log_service import append_change
 from app.services.validation import validate_task_window
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+def _require_task(db: Session, user_id: str, task_id: str) -> models.Task:
+    row = db.query(models.Task).filter_by(id=task_id, user_id=user_id, deleted_at=None).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return row
+
+
+def _list_task_tags(db: Session, user_id: str, task_id: str) -> list[models.Tag]:
+    return (
+        db.query(models.Tag)
+        .join(models.TaskTag, models.TaskTag.tag_id == models.Tag.id)
+        .filter(
+            models.TaskTag.user_id == user_id,
+            models.TaskTag.task_id == task_id,
+            models.Tag.user_id == user_id,
+            models.Tag.deleted_at.is_(None),
+        )
+        .order_by(models.Tag.name.asc())
+        .all()
+    )
 
 
 @router.get("", response_model=list[TaskOut])
@@ -40,6 +64,151 @@ def list_tasks(
     if status_filter:
         q = q.filter(models.Task.status == status_filter)
     return q.order_by(models.Task.date_local.asc(), models.Task.start_min.asc()).all()
+
+
+@router.get("/{task_id}/tags", response_model=list[TagOut])
+def list_task_tags(
+    task_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    _require_task(db, user.id, task_id)
+    return _list_task_tags(db, user.id, task_id)
+
+
+@router.post("/{task_id}/tags/{tag_id}", response_model=list[TagOut])
+def attach_task_tag(
+    task_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    task = _require_task(db, user.id, task_id)
+    tag = db.query(models.Tag).filter_by(id=tag_id, user_id=user.id, deleted_at=None).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    existing = (
+        db.query(models.TaskTag)
+        .filter_by(user_id=user.id, task_id=task_id, tag_id=tag_id)
+        .first()
+    )
+    if not existing:
+        db.add(models.TaskTag(user_id=user.id, task_id=task_id, tag_id=tag_id))
+        append_change(
+            db,
+            user.id,
+            "task_tag",
+            "upsert",
+            f"{task_id}:{tag_id}",
+            record={"taskId": task_id, "tagId": tag_id},
+        )
+        append_change(db, user.id, "task", "upsert", task.id, record=orm_to_dict(task))
+
+    db.commit()
+    return _list_task_tags(db, user.id, task_id)
+
+
+@router.put("/{task_id}/tags", response_model=list[TagOut])
+def replace_task_tags(
+    task_id: str,
+    payload: TaskTagReplaceInput,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    task = _require_task(db, user.id, task_id)
+    requested = list(dict.fromkeys(payload.tag_ids))
+    if requested:
+        valid_tags = (
+            db.query(models.Tag.id)
+            .filter(
+                models.Tag.user_id == user.id,
+                models.Tag.deleted_at.is_(None),
+                models.Tag.id.in_(requested),
+            )
+            .all()
+        )
+        valid_ids = {row[0] for row in valid_tags}
+        missing = [tag_id for tag_id in requested if tag_id not in valid_ids]
+        if missing:
+            raise HTTPException(status_code=404, detail=f"Tags not found: {', '.join(missing)}")
+    else:
+        valid_ids = set()
+
+    current_rows = (
+        db.query(models.TaskTag)
+        .filter_by(user_id=user.id, task_id=task_id)
+        .all()
+    )
+    current_ids = {row.tag_id for row in current_rows}
+    to_add = valid_ids - current_ids
+    to_remove = current_ids - valid_ids
+
+    for tag_id in to_add:
+        db.add(models.TaskTag(user_id=user.id, task_id=task_id, tag_id=tag_id))
+        append_change(
+            db,
+            user.id,
+            "task_tag",
+            "upsert",
+            f"{task_id}:{tag_id}",
+            record={"taskId": task_id, "tagId": tag_id},
+        )
+
+    if to_remove:
+        (
+            db.query(models.TaskTag)
+            .filter(
+                models.TaskTag.user_id == user.id,
+                models.TaskTag.task_id == task_id,
+                models.TaskTag.tag_id.in_(list(to_remove)),
+            )
+            .delete(synchronize_session=False)
+        )
+        for tag_id in to_remove:
+            append_change(
+                db,
+                user.id,
+                "task_tag",
+                "delete",
+                f"{task_id}:{tag_id}",
+                deleted_meta={"taskId": task_id, "tagId": tag_id},
+            )
+
+    if to_add or to_remove:
+        append_change(db, user.id, "task", "upsert", task.id, record=orm_to_dict(task))
+
+    db.commit()
+    return _list_task_tags(db, user.id, task_id)
+
+
+@router.delete("/{task_id}/tags/{tag_id}", response_model=list[TagOut])
+def detach_task_tag(
+    task_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    task = _require_task(db, user.id, task_id)
+
+    deleted = (
+        db.query(models.TaskTag)
+        .filter_by(user_id=user.id, task_id=task_id, tag_id=tag_id)
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        append_change(
+            db,
+            user.id,
+            "task_tag",
+            "delete",
+            f"{task_id}:{tag_id}",
+            deleted_meta={"taskId": task_id, "tagId": tag_id},
+        )
+        append_change(db, user.id, "task", "upsert", task.id, record=orm_to_dict(task))
+
+    db.commit()
+    return _list_task_tags(db, user.id, task_id)
 
 
 @router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)

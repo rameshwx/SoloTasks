@@ -3,10 +3,13 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/app_models.dart';
+import '../../core/models/remote_models.dart';
 import '../../core/providers/mock_data_provider.dart';
+import '../../core/providers/tag_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
+import 'tag_manager_sheet.dart';
 
 class TasksTab extends ConsumerStatefulWidget {
   const TasksTab({super.key});
@@ -19,6 +22,7 @@ class _TasksTabState extends ConsumerState<TasksTab> {
   final _searchCtrl = TextEditingController();
 
   bool _hasAttachments = false;
+  String? _selectedTagName;
 
   @override
   void dispose() {
@@ -29,12 +33,16 @@ class _TasksTabState extends ConsumerState<TasksTab> {
   @override
   Widget build(BuildContext context) {
     final tasks = ref.watch(taskListProvider);
+    final tagsState = ref.watch(tagControllerProvider);
     final query = _searchCtrl.text.trim().toLowerCase();
 
     final filtered = tasks.where((task) {
       final matchesSearch = task.title.toLowerCase().contains(query);
       final matchesAttachment = !_hasAttachments || task.hasAttachment;
-      return matchesSearch && matchesAttachment;
+      final matchesTag = _selectedTagName == null
+          ? true
+          : task.tags.any((tag) => tag == _selectedTagName);
+      return matchesSearch && matchesAttachment && matchesTag;
     }).toList();
 
     return Scaffold(
@@ -45,7 +53,7 @@ class _TasksTabState extends ConsumerState<TasksTab> {
             children: [
               _header(context),
               const SizedBox(height: 14),
-              _filterRow(context),
+              _filterRow(context, tagsState),
               const SizedBox(height: 18),
               _smartListHeader(context),
               const SizedBox(height: 10),
@@ -114,14 +122,28 @@ class _TasksTabState extends ConsumerState<TasksTab> {
     );
   }
 
-  Widget _filterRow(BuildContext context) {
+  Widget _filterRow(BuildContext context, AsyncValue<List<TagItem>> tagsState) {
+    final tagLabel =
+        _selectedTagName == null ? 'Tags' : 'Tag: $_selectedTagName';
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
           _FilterChipBtn(title: 'Status', onTap: () {}),
           const SizedBox(width: 10),
-          _FilterChipBtn(title: 'Tags', onTap: () {}),
+          _FilterChipBtn(
+            title: tagLabel,
+            onTap: () => _openTagPicker(tagsState),
+          ),
+          if (_selectedTagName != null) ...[
+            const SizedBox(width: 6),
+            IconButton(
+              onPressed: () => setState(() => _selectedTagName = null),
+              icon: const Icon(Icons.clear_rounded, size: 18),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
           const SizedBox(width: 10),
           _FilterChipBtn(title: 'Date Range', onTap: () {}),
           const SizedBox(width: 10),
@@ -148,7 +170,8 @@ class _TasksTabState extends ConsumerState<TasksTab> {
               ?.copyWith(fontWeight: FontWeight.w800),
         ),
         const Spacer(),
-        TextButton(onPressed: () {}, child: const Text('Edit')),
+        TextButton(
+            onPressed: _openTagManager, child: const Text('Manage Tags')),
       ],
     );
   }
@@ -177,6 +200,63 @@ class _TasksTabState extends ConsumerState<TasksTab> {
         ),
       ],
     );
+  }
+
+  Future<void> _openTagManager() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const TagManagerSheet(),
+    );
+  }
+
+  Future<void> _openTagPicker(AsyncValue<List<TagItem>> tagsState) async {
+    final tags = tagsState.valueOrNull;
+    if (tags == null || tags.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No tags yet. Use Manage Tags to add one.')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: GlassContainer(
+            borderRadius: 24,
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('Filter by Tag'),
+                  leading: Icon(Icons.sell_rounded, color: AppPalette.teal),
+                ),
+                ListTile(
+                  title: const Text('All Tags'),
+                  onTap: () => Navigator.of(context).pop(null),
+                ),
+                for (final tag in tags)
+                  ListTile(
+                    title: Text(tag.name),
+                    onTap: () => Navigator.of(context).pop(tag.name),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    setState(() => _selectedTagName = selected);
   }
 }
 

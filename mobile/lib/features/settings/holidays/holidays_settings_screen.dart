@@ -233,7 +233,7 @@ class _HolidaysSettingsScreenState
                 map[key] = current;
               }
 
-              ref.read(holidayDatesProvider.notifier).state = map;
+              ref.read(holidayDatesProvider.notifier).replaceAll(map);
             },
             calendarBuilders: CalendarBuilders(
               dowBuilder: (context, day) {
@@ -325,7 +325,7 @@ class _HolidaysSettingsScreenState
                     }
                   }
                 }
-                ref.read(holidayDatesProvider.notifier).state = cleared;
+                ref.read(holidayDatesProvider.notifier).replaceAll(cleared);
               },
               icon: const Icon(Icons.delete_sweep_rounded,
                   color: AppPalette.danger),
@@ -354,7 +354,7 @@ class _HolidaysSettingsScreenState
                   }
                   map[targetKey] = existing;
                 }
-                ref.read(holidayDatesProvider.notifier).state = map;
+                ref.read(holidayDatesProvider.notifier).replaceAll(map);
               },
               icon: const Icon(Icons.content_copy_rounded,
                   color: AppPalette.teal),

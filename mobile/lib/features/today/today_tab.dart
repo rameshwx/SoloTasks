@@ -404,117 +404,290 @@ class _TimelineList extends StatelessWidget {
   }
 }
 
-class _TimelineCard extends StatelessWidget {
+class _TimelineCard extends ConsumerStatefulWidget {
   const _TimelineCard({required this.task});
 
   final TaskViewModel task;
 
   @override
+  ConsumerState<_TimelineCard> createState() => _TimelineCardState();
+}
+
+class _TimelineCardState extends ConsumerState<_TimelineCard> {
+  static const _slotMinutes = 15;
+  static const _pixelsPerSlot = 14.0;
+
+  int? _previewStartMin;
+  int? _previewEndMin;
+  int _baseStartMin = 0;
+  int _baseEndMin = 0;
+  bool _saving = false;
+  bool _resizeDragging = false;
+  double _resizeCarryPx = 0;
+  int _lastMoveStep = 0;
+  int _lastResizeStep = 0;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final startMin = _previewStartMin ?? widget.task.startMin;
+    final endMin = _previewEndMin ?? widget.task.endMin;
+    final isEditing = _previewStartMin != null || _previewEndMin != null;
 
-    return GlassContainer(
-      borderRadius: 24,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      tint: theme.taskCardTint,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 56,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_fmt(task.startMin),
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(color: theme.subduedText)),
-                const SizedBox(height: 28),
-                Container(width: 1, height: 26, color: theme.dividerColor),
-                const SizedBox(height: 8),
-                Text(_fmt(task.endMin),
-                    style: theme.textTheme.titleSmall
-                        ?.copyWith(color: theme.subduedText)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(task.title,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800, fontSize: 37 / 2)),
-                const SizedBox(height: 4),
-                Text(
-                  task.hasAttachment
-                      ? 'Includes attachment preview'
-                      : 'Focused work block',
-                  style: theme.textTheme.bodyLarge
-                      ?.copyWith(color: theme.subduedText),
-                ),
-                const SizedBox(height: 10),
-                Row(
+    return GestureDetector(
+      onLongPressStart: (_) => _beginMoveDrag(),
+      onLongPressMoveUpdate: (details) =>
+          _updateMoveDrag(details.offsetFromOrigin.dy),
+      onLongPressEnd: (_) => _commitPreview(),
+      child: AnimatedScale(
+        scale: isEditing || _resizeDragging ? 1.01 : 1,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: GlassContainer(
+          borderRadius: 24,
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+          tint: theme.taskCardTint,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 56,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppPalette.teal.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color: AppPalette.teal.withValues(alpha: 0.35)),
-                      ),
-                      child: Text(
-                        task.status.name.toUpperCase(),
-                        style: const TextStyle(
-                            color: AppPalette.teal,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    if (task.hasAttachment)
-                      Row(
-                        children: [
-                          Icon(Icons.attach_file_rounded,
-                              size: 16, color: theme.subduedText),
-                          Text(' files',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.subduedText)),
-                        ],
-                      ),
+                    Text(_fmt(startMin),
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(color: theme.subduedText)),
+                    const SizedBox(height: 28),
+                    Container(width: 1, height: 26, color: theme.dividerColor),
+                    const SizedBox(height: 8),
+                    Text(_fmt(endMin),
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(color: theme.subduedText)),
                   ],
                 ),
-              ],
-            ),
-          ),
-          if (task.hasSubtasks)
-            SizedBox(
-              width: 44,
-              height: 44,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: (task.progressPercent ?? 0) / 100,
-                    strokeWidth: 4,
-                    color: AppPalette.teal,
-                    backgroundColor: theme.isDark
-                        ? Colors.white.withValues(alpha: 0.10)
-                        : Colors.black.withValues(alpha: 0.08),
-                  ),
-                  Text(
-                    '${task.doneSubtasks}/${task.totalSubtasks}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                        color: AppPalette.teal, fontWeight: FontWeight.w800),
-                  ),
-                ],
               ),
-            ),
-        ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.task.title,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800, fontSize: 37 / 2)),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.task.hasAttachment
+                          ? 'Includes attachment preview'
+                          : 'Focused work block',
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(color: theme.subduedText),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppPalette.teal.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: AppPalette.teal.withValues(alpha: 0.35)),
+                          ),
+                          child: Text(
+                            widget.task.status.name.toUpperCase(),
+                            style: const TextStyle(
+                                color: AppPalette.teal,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        if (widget.task.hasAttachment)
+                          Row(
+                            children: [
+                              Icon(Icons.attach_file_rounded,
+                                  size: 16, color: theme.subduedText),
+                              Text(' files',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: theme.subduedText)),
+                            ],
+                          ),
+                        const Spacer(),
+                        GestureDetector(
+                          onVerticalDragStart: (_) => _beginResizeDrag(),
+                          onVerticalDragUpdate: (details) =>
+                              _updateResizeDrag(details.delta.dy),
+                          onVerticalDragEnd: (_) => _commitPreview(),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: theme.isDark
+                                  ? Colors.white.withValues(alpha: 0.05)
+                                  : Colors.black.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: theme.glassBorder),
+                            ),
+                            child: Icon(Icons.drag_indicator_rounded,
+                                size: 18, color: theme.subduedText),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _saving
+                          ? 'Saving...'
+                          : 'Long-press and drag to move. Drag handle to resize.',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: theme.subduedText),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.task.hasSubtasks)
+                Padding(
+                  padding: const EdgeInsets.only(left: 10),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: (widget.task.progressPercent ?? 0) / 100,
+                          strokeWidth: 4,
+                          color: AppPalette.teal,
+                          backgroundColor: theme.isDark
+                              ? Colors.white.withValues(alpha: 0.10)
+                              : Colors.black.withValues(alpha: 0.08),
+                        ),
+                        Text(
+                          '${widget.task.doneSubtasks}/${widget.task.totalSubtasks}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                              color: AppPalette.teal,
+                              fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  void _beginMoveDrag() {
+    _baseStartMin = _previewStartMin ?? widget.task.startMin;
+    _baseEndMin = _previewEndMin ?? widget.task.endMin;
+    _lastMoveStep = 0;
+  }
+
+  void _updateMoveDrag(double offsetDy) {
+    final step = (offsetDy / _pixelsPerSlot).round();
+    if (step == _lastMoveStep) return;
+    _lastMoveStep = step;
+    HapticFeedback.selectionClick();
+
+    final candidateStart = _baseStartMin + step * _slotMinutes;
+    final candidateEnd = _baseEndMin + step * _slotMinutes;
+    final duration = _baseEndMin - _baseStartMin;
+
+    int nextStart = candidateStart;
+    int nextEnd = candidateEnd;
+    if (nextStart < 0) {
+      nextStart = 0;
+      nextEnd = duration;
+    } else if (nextEnd > 1440) {
+      nextEnd = 1440;
+      nextStart = nextEnd - duration;
+    }
+
+    setState(() {
+      _previewStartMin = nextStart;
+      _previewEndMin = nextEnd;
+    });
+  }
+
+  void _beginResizeDrag() {
+    setState(() {
+      _resizeDragging = true;
+      _resizeCarryPx = 0;
+      _baseStartMin = _previewStartMin ?? widget.task.startMin;
+      _baseEndMin = _previewEndMin ?? widget.task.endMin;
+      _lastResizeStep = 0;
+    });
+  }
+
+  void _updateResizeDrag(double deltaDy) {
+    _resizeCarryPx += deltaDy;
+    final step = (_resizeCarryPx / _pixelsPerSlot).round();
+    if (step == _lastResizeStep) return;
+    _lastResizeStep = step;
+    HapticFeedback.selectionClick();
+
+    var nextEnd = _baseEndMin + step * _slotMinutes;
+    final minEnd = _baseStartMin + _slotMinutes;
+    if (nextEnd < minEnd) nextEnd = minEnd;
+    if (nextEnd > 1440) nextEnd = 1440;
+
+    setState(() {
+      _previewStartMin = _baseStartMin;
+      _previewEndMin = nextEnd;
+    });
+  }
+
+  Future<void> _commitPreview() async {
+    final nextStart = _previewStartMin;
+    final nextEnd = _previewEndMin;
+    _resizeDragging = false;
+    _resizeCarryPx = 0;
+    _lastMoveStep = 0;
+    _lastResizeStep = 0;
+
+    if (nextStart == null || nextEnd == null) {
+      setState(() {});
+      return;
+    }
+    if (nextStart == widget.task.startMin && nextEnd == widget.task.endMin) {
+      setState(() {
+        _previewStartMin = null;
+        _previewEndMin = null;
+      });
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await ref.read(taskListProvider.notifier).rescheduleTask(
+            taskId: widget.task.id,
+            dateLocal: widget.task.dateLocal,
+            startMin: nextStart,
+            endMin: nextEnd,
+          );
+      if (!mounted) return;
+      setState(() {
+        _previewStartMin = null;
+        _previewEndMin = null;
+      });
+      HapticFeedback.mediumImpact();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _previewStartMin = null;
+        _previewEndMin = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to reschedule task.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   String _fmt(int totalMin) {
