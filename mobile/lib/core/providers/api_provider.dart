@@ -4,7 +4,7 @@ import '../../data/remote/api/api_client.dart';
 
 const _defaultApiBaseUrl = String.fromEnvironment(
   'SOLOTASKS_API_BASE_URL',
-  defaultValue: 'http://localhost:8000',
+  defaultValue: 'http://51.255.201.31:18000',
 );
 
 final apiClientProvider = Provider<ApiClient>((_) {
