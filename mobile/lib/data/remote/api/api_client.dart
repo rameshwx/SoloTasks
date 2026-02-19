@@ -114,6 +114,68 @@ class ApiClient {
     );
   }
 
+  Future<Response<dynamic>> listTaskSubtasks({
+    required String accessToken,
+    required String taskId,
+  }) {
+    return _dio.get(
+      '/v1/tasks/$taskId/subtasks',
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> createTaskSubtask({
+    required String accessToken,
+    required String taskId,
+    required String title,
+    bool isDone = false,
+    String? orderKey,
+    String? note,
+  }) {
+    return _dio.post(
+      '/v1/tasks/$taskId/subtasks',
+      data: {
+        'title': title,
+        'isDone': isDone,
+        if (orderKey != null) 'orderKey': orderKey,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> updateTaskSubtask({
+    required String accessToken,
+    required String taskId,
+    required String subtaskId,
+    String? title,
+    bool? isDone,
+    String? orderKey,
+    String? note,
+  }) {
+    return _dio.put(
+      '/v1/tasks/$taskId/subtasks/$subtaskId',
+      data: {
+        if (title != null) 'title': title,
+        if (isDone != null) 'isDone': isDone,
+        if (orderKey != null) 'orderKey': orderKey,
+        if (note != null) 'note': note,
+      },
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> deleteTaskSubtask({
+    required String accessToken,
+    required String taskId,
+    required String subtaskId,
+  }) {
+    return _dio.delete(
+      '/v1/tasks/$taskId/subtasks/$subtaskId',
+      options: _authOptions(accessToken),
+    );
+  }
+
   Future<Response<dynamic>> listReminders({required String accessToken}) {
     return _dio.get('/v1/reminders', options: _authOptions(accessToken));
   }

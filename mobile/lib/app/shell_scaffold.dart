@@ -3,22 +3,24 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/app_palette.dart';
+import '../core/providers/day_mode_provider.dart';
 import '../features/calendar/calendar_tab.dart';
 import '../features/settings/settings_tab.dart';
 import '../features/tasks/tasks_tab.dart';
 import '../features/today/quick_add_task_sheet.dart';
 import '../features/today/today_tab.dart';
 
-class AppShellScaffold extends StatefulWidget {
+class AppShellScaffold extends ConsumerStatefulWidget {
   const AppShellScaffold({super.key});
 
   @override
-  State<AppShellScaffold> createState() => _AppShellScaffoldState();
+  ConsumerState<AppShellScaffold> createState() => _AppShellScaffoldState();
 }
 
-class _AppShellScaffoldState extends State<AppShellScaffold> {
+class _AppShellScaffoldState extends ConsumerState<AppShellScaffold> {
   int _index = 0;
 
   final _pages = const [
@@ -48,6 +50,11 @@ class _AppShellScaffoldState extends State<AppShellScaffold> {
       bottomNavigationBar: _BottomGlassNav(
         currentIndex: _index,
         onChanged: (next) {
+          if (next == 0) {
+            final now = DateTime.now();
+            ref.read(selectedDayProvider.notifier).state =
+                DateTime(now.year, now.month, now.day);
+          }
           HapticFeedback.selectionClick();
           setState(() => _index = next);
         },

@@ -24,6 +24,41 @@ class TagItem {
   }
 }
 
+class SubtaskItem {
+  SubtaskItem({
+    required this.id,
+    required this.taskId,
+    required this.title,
+    required this.isDone,
+    required this.orderKey,
+    this.note,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String id;
+  final String taskId;
+  final String title;
+  final bool isDone;
+  final String orderKey;
+  final String? note;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  factory SubtaskItem.fromJson(Map<String, dynamic> json) {
+    return SubtaskItem(
+      id: json['id'].toString(),
+      taskId: (json['task_id'] ?? json['taskId'] ?? '').toString(),
+      title: (json['title'] ?? '').toString(),
+      isDone: _parseBool(json['is_done'] ?? json['isDone']) ?? false,
+      orderKey: (json['order_key'] ?? json['orderKey'] ?? '').toString(),
+      note: (json['note'])?.toString(),
+      createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
+      updatedAt: _parseDateTime(json['updated_at'] ?? json['updatedAt']),
+    );
+  }
+}
+
 class ReminderItem {
   ReminderItem({
     required this.id,
@@ -149,5 +184,16 @@ int? _parseInt(dynamic value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   if (value is String) return int.tryParse(value);
+  return null;
+}
+
+bool? _parseBool(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1') return true;
+    if (normalized == 'false' || normalized == '0') return false;
+  }
   return null;
 }

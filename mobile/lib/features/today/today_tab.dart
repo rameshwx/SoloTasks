@@ -17,7 +17,8 @@ class TodayTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedDay = ref.watch(selectedDayProvider);
+    final now = DateTime.now();
+    final selectedDay = DateTime(now.year, now.month, now.day);
     final mode = ref.watch(dayModeProvider);
     final tasks = ref.watch(taskListProvider);
     final holidayMap = ref.watch(holidayDatesProvider);

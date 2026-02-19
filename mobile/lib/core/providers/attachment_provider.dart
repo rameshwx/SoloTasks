@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -91,13 +92,41 @@ class TaskAttachmentController
         throw Exception('Upload URL missing from server response.');
       }
 
-      await _ref.read(apiClientProvider).uploadAttachmentBytes(
-            accessToken: accessToken,
-            uploadUrl: init.uploadUrl,
-            method: init.method,
-            headers: init.headers,
-            bytes: bytes,
-          );
+      final proxyUploadPath = '/v1/attachments/${init.attachmentId}/upload';
+      final shouldProxy = _requiresProxyUpload(init.uploadUrl);
+
+      if (shouldProxy) {
+        await _ref.read(apiClientProvider).uploadAttachmentBytes(
+              accessToken: accessToken,
+              uploadUrl: proxyUploadPath,
+              method: 'PUT',
+              headers: {
+                'Content-Type': mimeType,
+              },
+              bytes: bytes,
+            );
+      } else {
+        try {
+          await _ref.read(apiClientProvider).uploadAttachmentBytes(
+                accessToken: accessToken,
+                uploadUrl: init.uploadUrl,
+                method: init.method,
+                headers: init.headers,
+                bytes: bytes,
+              );
+        } on DioException {
+          // Fallback to API proxy upload when direct presigned URL is unreachable.
+          await _ref.read(apiClientProvider).uploadAttachmentBytes(
+                accessToken: accessToken,
+                uploadUrl: proxyUploadPath,
+                method: 'PUT',
+                headers: {
+                  'Content-Type': mimeType,
+                },
+                bytes: bytes,
+              );
+        }
+      }
       return;
     });
   }
@@ -131,5 +160,18 @@ class TaskAttachmentController
     if (lower.endsWith('.webp')) return 'image/webp';
     if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
     return 'application/octet-stream';
+  }
+
+  bool _requiresProxyUpload(String uploadUrl) {
+    if (!uploadUrl.startsWith('http://') && !uploadUrl.startsWith('https://')) {
+      return false;
+    }
+    final uri = Uri.tryParse(uploadUrl);
+    if (uri == null) return true;
+    final host = uri.host.toLowerCase();
+    return host == 'minio' ||
+        host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host.endsWith('.internal');
   }
 }

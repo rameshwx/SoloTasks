@@ -6,6 +6,7 @@ import '../../core/models/remote_models.dart';
 import '../../core/providers/attachment_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
 import '../../core/providers/reminder_provider.dart';
+import '../../core/providers/subtask_provider.dart';
 import '../../core/providers/tag_provider.dart';
 import '../../core/providers/task_tag_provider.dart';
 import '../../core/theme/app_palette.dart';
@@ -24,6 +25,7 @@ class TaskDetailScreen extends ConsumerStatefulWidget {
 class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   bool _busyAttachments = false;
   bool _busyReminders = false;
+  bool _busySubtasks = false;
   bool _busyTaskTags = false;
 
   @override
@@ -37,6 +39,8 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         ref.watch(taskAttachmentControllerProvider(widget.taskId));
     final remindersState =
         ref.watch(taskReminderControllerProvider(widget.taskId));
+    final subtasksState =
+        ref.watch(taskSubtaskControllerProvider(widget.taskId));
     final taskTagsState = ref.watch(taskTagControllerProvider(widget.taskId));
     final allTagsState = ref.watch(tagControllerProvider);
 
@@ -68,7 +72,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               const SizedBox(height: 18),
               _taskTagSection(context, taskTagsState, allTagsState),
               const SizedBox(height: 18),
-              _subtaskSection(context, task),
+              _subtaskSection(context, task, subtasksState),
               const SizedBox(height: 18),
               _reminderSection(context, remindersState),
               const SizedBox(height: 18),
@@ -117,6 +121,9 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                   .load();
               ref
                   .read(taskReminderControllerProvider(widget.taskId).notifier)
+                  .load();
+              ref
+                  .read(taskSubtaskControllerProvider(widget.taskId).notifier)
                   .load();
               ref
                   .read(taskTagControllerProvider(widget.taskId).notifier)
@@ -266,9 +273,17 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
-  Widget _subtaskSection(BuildContext context, TaskViewModel task) {
-    final progress = task.progressPercent ?? 0;
-    final visibleProgress = task.hasSubtasks;
+  Widget _subtaskSection(
+    BuildContext context,
+    TaskViewModel task,
+    AsyncValue<List<SubtaskItem>> subtasksState,
+  ) {
+    final subtasks = subtasksState.valueOrNull ?? const <SubtaskItem>[];
+    final total = subtasks.length;
+    final done = subtasks.where((item) => item.isDone).length;
+    final visibleProgress = total > 0;
+    final progress = visibleProgress ? (done / total) * 100 : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -281,7 +296,25 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                   .headlineMedium
                   ?.copyWith(fontWeight: FontWeight.w800),
             ),
+            const SizedBox(width: 8),
+            Text(
+              '($total)',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(color: Theme.of(context).subduedText),
+            ),
             const Spacer(),
+            IconButton(
+              onPressed: _busySubtasks ? null : _addSubtask,
+              icon: _busySubtasks
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_task_rounded, color: AppPalette.teal),
+            ),
             if (visibleProgress) ...[
               Text(
                 '${progress.toStringAsFixed(0)}%',
@@ -305,16 +338,46 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           ],
         ),
         const SizedBox(height: 10),
-        GlassContainer(
-          borderRadius: 24,
-          child: Text(
-            'Subtask editing is available from sync queue and timeline views.\n'
-            'Reminder/attachment CRUD below is backend-integrated.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: Theme.of(context).subduedText),
+        subtasksState.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
           ),
+          error: (error, _) => GlassContainer(
+            borderRadius: 20,
+            child: Text(
+              'Failed to load subtasks: $error',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          data: (items) {
+            if (items.isEmpty) {
+              return GlassContainer(
+                borderRadius: 20,
+                child: Text(
+                  'No subtasks yet. Tap add to create one.',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: Theme.of(context).subduedText),
+                ),
+              );
+            }
+
+            return Column(
+              children: [
+                for (final subtask in items) ...[
+                  _SubtaskTile(
+                    subtask: subtask,
+                    onToggle: () => _toggleSubtask(subtask),
+                    onEdit: () => _editSubtask(subtask),
+                    onDelete: () => _deleteSubtask(subtask),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            );
+          },
         ),
       ],
     );
@@ -619,6 +682,130 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     }
   }
 
+  Future<void> _addSubtask() async {
+    final draft = await _showSubtaskEditor();
+    if (draft == null) return;
+
+    setState(() => _busySubtasks = true);
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .createSubtask(title: draft.title, note: draft.note);
+      _snack('Subtask added');
+    } catch (error) {
+      _snack('Failed to add subtask: $error');
+    } finally {
+      if (mounted) setState(() => _busySubtasks = false);
+    }
+  }
+
+  Future<void> _toggleSubtask(SubtaskItem subtask) async {
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .updateSubtask(
+            subtaskId: subtask.id,
+            isDone: !subtask.isDone,
+          );
+    } catch (error) {
+      _snack('Failed to update subtask: $error');
+    }
+  }
+
+  Future<void> _editSubtask(SubtaskItem subtask) async {
+    final draft = await _showSubtaskEditor(
+      initialTitle: subtask.title,
+      initialNote: subtask.note,
+      isEdit: true,
+    );
+    if (draft == null) return;
+
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .updateSubtask(
+            subtaskId: subtask.id,
+            title: draft.title,
+            note: draft.note,
+          );
+      _snack('Subtask updated');
+    } catch (error) {
+      _snack('Failed to update subtask: $error');
+    }
+  }
+
+  Future<void> _deleteSubtask(SubtaskItem subtask) async {
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .deleteSubtask(subtask.id);
+      _snack('Subtask deleted');
+    } catch (error) {
+      _snack('Failed to delete subtask: $error');
+    }
+  }
+
+  Future<_SubtaskDraft?> _showSubtaskEditor({
+    String? initialTitle,
+    String? initialNote,
+    bool isEdit = false,
+  }) async {
+    final titleCtrl = TextEditingController(text: initialTitle ?? '');
+    final noteCtrl = TextEditingController(text: initialNote ?? '');
+    final result = await showDialog<_SubtaskDraft?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(isEdit ? 'Edit Subtask' : 'Add Subtask'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Title',
+                  hintText: 'Subtask title',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: noteCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Note (optional)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final title = titleCtrl.text.trim();
+                if (title.isEmpty) return;
+                final note = noteCtrl.text.trim();
+                Navigator.of(context).pop(
+                  _SubtaskDraft(
+                    title: title,
+                    note: note.isEmpty ? null : note,
+                  ),
+                );
+              },
+              child: Text(isEdit ? 'Save' : 'Add'),
+            ),
+          ],
+        );
+      },
+    );
+    titleCtrl.dispose();
+    noteCtrl.dispose();
+    return result;
+  }
+
   Future<void> _addAttachment() async {
     setState(() => _busyAttachments = true);
     try {
@@ -834,6 +1021,99 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   void _snack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+}
+
+class _SubtaskDraft {
+  const _SubtaskDraft({
+    required this.title,
+    this.note,
+  });
+
+  final String title;
+  final String? note;
+}
+
+class _SubtaskTile extends StatelessWidget {
+  const _SubtaskTile({
+    required this.subtask,
+    required this.onToggle,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final SubtaskItem subtask;
+  final VoidCallback onToggle;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = subtask.isDone;
+    return GlassContainer(
+      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Row(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: onToggle,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done ? AppPalette.teal : Colors.transparent,
+                border: Border.all(
+                  color: done ? AppPalette.teal : Theme.of(context).subduedText,
+                  width: 2,
+                ),
+              ),
+              child: done
+                  ? const Icon(Icons.check_rounded,
+                      size: 16, color: Color(0xFF032A27))
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  subtask.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        decoration: done ? TextDecoration.lineThrough : null,
+                        color: done
+                            ? Theme.of(context).subduedText
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                ),
+                if (subtask.note != null && subtask.note!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      subtask.note!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Theme.of(context).subduedText),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_rounded)),
+          IconButton(
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline_rounded,
+                color: AppPalette.danger),
+          ),
+        ],
+      ),
+    );
   }
 }
 
