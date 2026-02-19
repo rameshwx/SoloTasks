@@ -81,6 +81,24 @@ class TaskSubtaskController
     await load();
   }
 
+  Future<void> reorderSubtasks(List<SubtaskItem> orderedSubtasks) async {
+    await _ref.read(authedApiServiceProvider).run((accessToken) async {
+      for (var i = 0; i < orderedSubtasks.length; i++) {
+        final subtask = orderedSubtasks[i];
+        final nextOrderKey = i.toString().padLeft(6, '0');
+        if (subtask.orderKey == nextOrderKey) continue;
+        await _ref.read(apiClientProvider).updateTaskSubtask(
+              accessToken: accessToken,
+              taskId: taskId,
+              subtaskId: subtask.id,
+              orderKey: nextOrderKey,
+            );
+      }
+      return;
+    });
+    await load();
+  }
+
   Future<void> markAllDone() async {
     await _setAllDone(true);
   }

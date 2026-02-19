@@ -381,18 +381,73 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               );
             }
 
-            return Column(
-              children: [
-                for (final subtask in items) ...[
-                  _SubtaskTile(
-                    subtask: subtask,
-                    onToggle: () => _toggleSubtask(subtask),
-                    onEdit: () => _editSubtask(subtask),
-                    onDelete: () => _deleteSubtask(subtask),
+            return ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: items.length,
+              buildDefaultDragHandles: false,
+              proxyDecorator: (child, _, __) => Material(
+                color: Colors.transparent,
+                child: child,
+              ),
+              onReorder: (oldIndex, newIndex) {
+                _reorderSubtasks(
+                  items: items,
+                  oldIndex: oldIndex,
+                  newIndex: newIndex,
+                );
+              },
+              itemBuilder: (context, index) {
+                final subtask = items[index];
+                return Padding(
+                  key: ValueKey('subtask-${subtask.id}'),
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Dismissible(
+                    key: ValueKey('subtask-dismiss-${subtask.id}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: AppPalette.danger.withValues(alpha: 0.18),
+                        border: Border.all(
+                          color: AppPalette.danger.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Icon(
+                            Icons.delete_outline_rounded,
+                            color: AppPalette.danger,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete',
+                            style: TextStyle(
+                              color: AppPalette.danger,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    onDismissed: (_) => _deleteSubtask(subtask),
+                    child: _SubtaskTile(
+                      subtask: subtask,
+                      onToggle: () => _toggleSubtask(subtask),
+                      dragHandle: ReorderableDragStartListener(
+                        index: index,
+                        child: Icon(
+                          Icons.drag_handle_rounded,
+                          color: Theme.of(context).subduedText,
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                ],
-              ],
+                );
+              },
             );
           },
         ),
@@ -733,28 +788,6 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     }
   }
 
-  Future<void> _editSubtask(SubtaskItem subtask) async {
-    final draft = await _showSubtaskEditor(
-      initialTitle: subtask.title,
-      initialNote: subtask.note,
-      isEdit: true,
-    );
-    if (draft == null) return;
-
-    try {
-      await ref
-          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
-          .updateSubtask(
-            subtaskId: subtask.id,
-            title: draft.title,
-            note: draft.note,
-          );
-      _snack('Subtask updated');
-    } catch (error) {
-      _snack('Failed to update subtask: $error');
-    }
-  }
-
   Future<void> _deleteSubtask(SubtaskItem subtask) async {
     try {
       await ref
@@ -763,6 +796,27 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       _snack('Subtask deleted');
     } catch (error) {
       _snack('Failed to delete subtask: $error');
+    }
+  }
+
+  Future<void> _reorderSubtasks({
+    required List<SubtaskItem> items,
+    required int oldIndex,
+    required int newIndex,
+  }) async {
+    final reordered = [...items];
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .reorderSubtasks(reordered);
+    } catch (error) {
+      _snack('Failed to reorder subtasks: $error');
     }
   }
 
@@ -1105,14 +1159,12 @@ class _SubtaskTile extends StatelessWidget {
   const _SubtaskTile({
     required this.subtask,
     required this.onToggle,
-    required this.onEdit,
-    required this.onDelete,
+    required this.dragHandle,
   });
 
   final SubtaskItem subtask;
   final VoidCallback onToggle;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final Widget dragHandle;
 
   @override
   Widget build(BuildContext context) {
@@ -1172,12 +1224,7 @@ class _SubtaskTile extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_rounded)),
-          IconButton(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded,
-                color: AppPalette.danger),
-          ),
+          dragHandle,
         ],
       ),
     );
