@@ -31,6 +31,8 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
     final selectedDay = ref.watch(selectedDayProvider);
     final tasks = ref.watch(taskListProvider);
     final holidayMap = ref.watch(holidayDatesProvider);
+    final selectedHolidays =
+        holidayMap[_dayKey(selectedDay)] ?? const <HolidayType>[];
     final prefs = ref.watch(userPreferencesProvider).valueOrNull;
     final hideTasksOnHolidays =
         prefs?.holidayPrefs.hideTasksOnHolidays ?? false;
@@ -132,6 +134,10 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
                   ],
                 ),
               ).animate().fadeIn(duration: 280.ms).slideY(begin: 0.06, end: 0),
+              if (selectedHolidays.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _holidayBanner(context, selectedHolidays),
+              ],
               const SizedBox(height: 16),
               for (final task in selectedTasks) ...[
                 TaskCard(
@@ -227,6 +233,44 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
             color: selected ? AppPalette.teal : theme.colorScheme.onSurface,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _holidayBanner(BuildContext context, List<HolidayType> holidays) {
+    final holidayNames = holidays
+        .map((type) => '${type.name[0].toUpperCase()}${type.name.substring(1)}')
+        .join(', ');
+
+    return GlassContainer(
+      borderRadius: 20,
+      padding: const EdgeInsets.all(14),
+      tint: Theme.of(context).isDark
+          ? AppPalette.teal.withValues(alpha: 0.10)
+          : AppPalette.teal.withValues(alpha: 0.17),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppPalette.teal.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child:
+                const Icon(Icons.beach_access_rounded, color: AppPalette.teal),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Holiday: $holidayNames',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }
