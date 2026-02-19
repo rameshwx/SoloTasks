@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from io import StringIO
 import csv
 
-from ics import Calendar, Event
 from sqlalchemy.orm import Session
 
 from app.db import models
@@ -34,30 +33,26 @@ def export_csv_tasks(db: Session, user_id: str) -> str:
 
 
 def export_ics(db: Session, user_id: str, include_holidays: bool) -> str:
-    cal = Calendar()
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//SoloTasks//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+    ]
+
     tasks = db.query(models.Task).filter_by(user_id=user_id, deleted_at=None).all()
     for t in tasks:
-        event = Event()
-        event.name = t.title
-        start_hour = t.start_min // 60
-        start_minute = t.start_min % 60
-        event.begin = f"{t.date_local.isoformat()} {start_hour:02d}:{start_minute:02d}:00"
-        if t.end_min:
-            end_hour = t.end_min // 60
-            end_minute = t.end_min % 60
-            event.end = f"{t.date_local.isoformat()} {end_hour:02d}:{end_minute:02d}:00"
-        cal.events.add(event)
+        lines.extend(_task_event_lines(t, dtstamp))
 
     if include_holidays:
         holidays = db.query(models.Holiday).filter_by(user_id=user_id, deleted_at=None).all()
         for h in holidays:
-            event = Event()
-            event.name = f"Holiday ({h.type.value})" if not h.label else h.label
-            event.make_all_day()
-            event.begin = h.date_local.isoformat()
-            cal.events.add(event)
+            lines.extend(_holiday_event_lines(h, dtstamp))
 
-    return str(cal)
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines) + "\r\n"
 
 
 def to_dict(obj) -> dict:
@@ -72,3 +67,50 @@ def to_dict(obj) -> dict:
             value = value.value
         data[col.name] = value
     return data
+
+
+def _task_event_lines(task: models.Task, dtstamp: str) -> list[str]:
+    start_dt = datetime.combine(task.date_local, time(hour=task.start_min // 60, minute=task.start_min % 60))
+
+    if task.end_min is not None:
+        end_dt = datetime.combine(task.date_local, time(hour=task.end_min // 60, minute=task.end_min % 60))
+    else:
+        end_dt = start_dt + timedelta(minutes=task.duration_min or 0)
+
+    lines = [
+        "BEGIN:VEVENT",
+        f"UID:task-{task.id}@solotasks",
+        f"DTSTAMP:{dtstamp}",
+        f"SUMMARY:{_ics_escape(task.title)}",
+        f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+        f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+    ]
+    if task.description:
+        lines.append(f"DESCRIPTION:{_ics_escape(task.description)}")
+    lines.append("END:VEVENT")
+    return lines
+
+
+def _holiday_event_lines(holiday: models.Holiday, dtstamp: str) -> list[str]:
+    summary = holiday.label or f"Holiday ({holiday.type.value})"
+    day_str = holiday.date_local.strftime("%Y%m%d")
+    next_day_str = (holiday.date_local + timedelta(days=1)).strftime("%Y%m%d")
+    return [
+        "BEGIN:VEVENT",
+        f"UID:holiday-{holiday.id}@solotasks",
+        f"DTSTAMP:{dtstamp}",
+        f"SUMMARY:{_ics_escape(summary)}",
+        f"DTSTART;VALUE=DATE:{day_str}",
+        f"DTEND;VALUE=DATE:{next_day_str}",
+        "END:VEVENT",
+    ]
+
+
+def _ics_escape(text: str) -> str:
+    return (
+        text.replace("\\", "\\\\")
+        .replace(";", r"\;")
+        .replace(",", r"\,")
+        .replace("\r\n", r"\n")
+        .replace("\n", r"\n")
+    )

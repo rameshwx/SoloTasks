@@ -23,8 +23,6 @@ dependencies = [
   "python-multipart>=0.0.9",
   "boto3>=1.34.147",
   "orjson>=3.10.7",
-  "ics>=0.7.2",
-  "rich>=13.7.1",
 ]
 
 [project.optional-dependencies]
