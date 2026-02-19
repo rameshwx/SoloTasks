@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     otp_resend_cooldown_seconds: int = Field(default=60, alias="OTP_RESEND_COOLDOWN_SECONDS")
     otp_max_per_window: int = Field(default=5, alias="OTP_MAX_PER_WINDOW")
     otp_throttle_window_minutes: int = Field(default=30, alias="OTP_THROTTLE_WINDOW_MINUTES")
-    otp_from_email: str = Field(alias="OTP_FROM_EMAIL")
+    otp_from_email: str | None = Field(default=None, alias="OTP_FROM_EMAIL")
 
     smtp_host: str = Field(alias="SMTP_HOST")
     smtp_port: int = Field(default=465, alias="SMTP_PORT")

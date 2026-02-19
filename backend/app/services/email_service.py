@@ -10,8 +10,9 @@ from app.core.config import get_settings
 
 async def send_otp_email(email: str, otp: str) -> None:
     settings = get_settings()
+    sender = (settings.otp_from_email or settings.smtp_username).strip()
     message = EmailMessage()
-    message["From"] = settings.otp_from_email
+    message["From"] = sender
     message["To"] = email
     message["Subject"] = "Your SoloTasks verification code"
     message.set_content(
