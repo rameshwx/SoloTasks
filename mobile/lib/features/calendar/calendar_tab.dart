@@ -199,38 +199,58 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
     required bool hasHoliday,
   }) {
     final theme = Theme.of(context);
+    final holidayAccent = AppPalette.danger;
+    final defaultFill = theme.isDark
+        ? const Color.fromRGBO(255, 255, 255, 0.04)
+        : const Color.fromRGBO(0, 0, 0, 0.04);
+    final selectedFill =
+        AppPalette.teal.withValues(alpha: theme.isDark ? 0.20 : 0.24);
+    final holidayFill = holidayAccent.withValues(
+      alpha: selected
+          ? (theme.isDark ? 0.22 : 0.19)
+          : (theme.isDark ? 0.14 : 0.11),
+    );
 
     return Container(
       margin: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: selected
-            ? AppPalette.teal.withValues(alpha: theme.isDark ? 0.20 : 0.24)
-            : theme.isDark
-                ? const Color.fromRGBO(255, 255, 255, 0.04)
-                : const Color.fromRGBO(0, 0, 0, 0.04),
+        color:
+            hasHoliday ? holidayFill : (selected ? selectedFill : defaultFill),
         border: Border.all(
           color: hasHoliday
-              ? AppPalette.success.withValues(alpha: 0.6)
+              ? holidayAccent.withValues(alpha: selected ? 0.95 : 0.78)
               : selected
                   ? AppPalette.teal.withValues(alpha: 0.55)
                   : theme.glassBorder,
         ),
-        boxShadow: selected
+        boxShadow: hasHoliday
             ? [
                 BoxShadow(
-                  color: AppPalette.teal.withValues(alpha: 0.30),
-                  blurRadius: 12,
+                  color: holidayAccent.withValues(alpha: 0.34),
+                  blurRadius: 13,
+                  spreadRadius: 0.4,
                 ),
               ]
-            : const [],
+            : selected
+                ? [
+                    BoxShadow(
+                      color: AppPalette.teal.withValues(alpha: 0.30),
+                      blurRadius: 12,
+                    ),
+                  ]
+                : const [],
       ),
       child: Center(
         child: Text(
           '${day.day}',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-            color: selected ? AppPalette.teal : theme.colorScheme.onSurface,
+            color: hasHoliday
+                ? holidayAccent
+                : selected
+                    ? AppPalette.teal
+                    : theme.colorScheme.onSurface,
           ),
         ),
       ),
@@ -246,28 +266,28 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
       borderRadius: 20,
       padding: const EdgeInsets.all(14),
       tint: Theme.of(context).isDark
-          ? AppPalette.teal.withValues(alpha: 0.10)
-          : AppPalette.teal.withValues(alpha: 0.17),
+          ? AppPalette.danger.withValues(alpha: 0.11)
+          : AppPalette.danger.withValues(alpha: 0.17),
       child: Row(
         children: [
           Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: AppPalette.teal.withValues(alpha: 0.2),
+              color: AppPalette.danger.withValues(alpha: 0.20),
               shape: BoxShape.circle,
             ),
-            child:
-                const Icon(Icons.beach_access_rounded, color: AppPalette.teal),
+            child: const Icon(Icons.beach_access_rounded,
+                color: AppPalette.danger),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Holiday: $holidayNames',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.danger,
+                  ),
             ),
           ),
         ],
