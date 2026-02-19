@@ -750,60 +750,16 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     String? initialNote,
     bool isEdit = false,
   }) async {
-    final titleCtrl = TextEditingController(text: initialTitle ?? '');
-    final noteCtrl = TextEditingController(text: initialNote ?? '');
-    final result = await showDialog<_SubtaskDraft?>(
+    return showDialog<_SubtaskDraft?>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(isEdit ? 'Edit Subtask' : 'Add Subtask'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Title',
-                  hintText: 'Subtask title',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: noteCtrl,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Note (optional)',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final title = titleCtrl.text.trim();
-                if (title.isEmpty) return;
-                final note = noteCtrl.text.trim();
-                Navigator.of(context).pop(
-                  _SubtaskDraft(
-                    title: title,
-                    note: note.isEmpty ? null : note,
-                  ),
-                );
-              },
-              child: Text(isEdit ? 'Save' : 'Add'),
-            ),
-          ],
+        return _SubtaskEditorDialog(
+          initialTitle: initialTitle,
+          initialNote: initialNote,
+          isEdit: isEdit,
         );
       },
     );
-    titleCtrl.dispose();
-    noteCtrl.dispose();
-    return result;
   }
 
   Future<void> _addAttachment() async {
@@ -1032,6 +988,93 @@ class _SubtaskDraft {
 
   final String title;
   final String? note;
+}
+
+class _SubtaskEditorDialog extends StatefulWidget {
+  const _SubtaskEditorDialog({
+    required this.isEdit,
+    this.initialTitle,
+    this.initialNote,
+  });
+
+  final bool isEdit;
+  final String? initialTitle;
+  final String? initialNote;
+
+  @override
+  State<_SubtaskEditorDialog> createState() => _SubtaskEditorDialogState();
+}
+
+class _SubtaskEditorDialogState extends State<_SubtaskEditorDialog> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _noteCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.initialTitle ?? '');
+    _noteCtrl = TextEditingController(text: widget.initialNote ?? '');
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      scrollable: true,
+      title: Text(widget.isEdit ? 'Edit Subtask' : 'Add Subtask'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleCtrl,
+              autofocus: true,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Title',
+                hintText: 'Subtask title',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _noteCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Note (optional)',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final title = _titleCtrl.text.trim();
+            if (title.isEmpty) return;
+            final note = _noteCtrl.text.trim();
+            Navigator.of(context).pop(
+              _SubtaskDraft(
+                title: title,
+                note: note.isEmpty ? null : note,
+              ),
+            );
+          },
+          child: Text(widget.isEdit ? 'Save' : 'Add'),
+        ),
+      ],
+    );
+  }
 }
 
 class _SubtaskTile extends StatelessWidget {
