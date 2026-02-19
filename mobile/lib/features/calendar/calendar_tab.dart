@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -6,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../core/models/app_models.dart';
 import '../../core/providers/day_mode_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
+import '../../core/providers/subtask_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
@@ -162,7 +164,10 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
               ),
               const SizedBox(height: 16),
               for (final task in selectedTasks) ...[
-                TaskCard(task: task),
+                TaskCard(
+                  task: task,
+                  onToggleComplete: () => _toggleTaskCompletion(task),
+                ),
                 const SizedBox(height: 10),
               ],
             ],
@@ -320,6 +325,28 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
       'December'
     ];
     return names[month - 1];
+  }
+
+  Future<void> _toggleTaskCompletion(TaskViewModel task) async {
+    final markDone = task.status != TaskStatus.done;
+    try {
+      await ref.read(taskListProvider.notifier).setTaskStatus(
+            taskId: task.id,
+            status: markDone ? TaskStatus.done : TaskStatus.todo,
+          );
+      if (markDone) {
+        await ref
+            .read(taskSubtaskControllerProvider(task.id).notifier)
+            .markAllDone();
+      }
+      if (!mounted) return;
+      HapticFeedback.mediumImpact();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update task: $error')),
+      );
+    }
   }
 
   DateTime _dayKey(DateTime day) => DateTime(day.year, day.month, day.day);

@@ -1,23 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/app_models.dart';
+import '../../core/models/remote_models.dart';
+import '../../core/providers/subtask_provider.dart';
 import '../../core/theme/app_palette.dart';
 import 'glass_container.dart';
 
-class TaskCard extends StatelessWidget {
+class TaskCard extends ConsumerWidget {
   const TaskCard({
     super.key,
     required this.task,
     this.compact = false,
+    this.onToggleComplete,
   });
 
   final TaskViewModel task;
   final bool compact;
+  final Future<void> Function()? onToggleComplete;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final subtasksState = ref.watch(taskSubtaskControllerProvider(task.id));
+    final progressInfo = _progressInfo(subtasksState);
+    final hasSubtasks = progressInfo.total > 0;
+    final progressPercent = hasSubtasks
+        ? (progressInfo.done / progressInfo.total) * 100
+        : (task.progressPercent ?? 0);
+    final isDone = task.status == TaskStatus.done;
 
     return GlassContainer(
       borderRadius: 24,
@@ -32,6 +44,20 @@ class TaskCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (onToggleComplete != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: IconButton(
+                      onPressed: () => onToggleComplete?.call(),
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        isDone
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: isDone ? AppPalette.success : theme.subduedText,
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -41,6 +67,9 @@ class TaskCard extends StatelessWidget {
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.3,
+                          decoration:
+                              isDone ? TextDecoration.lineThrough : null,
+                          color: isDone ? theme.subduedText : null,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -75,15 +104,23 @@ class TaskCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (task.hasSubtasks) ...[
+            if (hasSubtasks) ...[
               const SizedBox(height: 10),
+              Text(
+                'Tasks ${progressInfo.done}/${progressInfo.total} : ${progressPercent.toStringAsFixed(0)}% completed',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.subduedText,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(99),
                       child: LinearProgressIndicator(
-                        value: (task.progressPercent ?? 0) / 100,
+                        value: progressPercent / 100,
                         minHeight: 7,
                         backgroundColor: theme.isDark
                             ? Colors.white.withValues(alpha: 0.08)
@@ -100,7 +137,7 @@ class TaskCard extends StatelessWidget {
                       alignment: Alignment.center,
                       children: [
                         CircularProgressIndicator(
-                          value: (task.progressPercent ?? 0) / 100,
+                          value: progressPercent / 100,
                           strokeWidth: 3.2,
                           backgroundColor: theme.isDark
                               ? Colors.white.withValues(alpha: 0.10)
@@ -108,7 +145,7 @@ class TaskCard extends StatelessWidget {
                           color: AppPalette.teal,
                         ),
                         Text(
-                          '${task.doneSubtasks}/${task.totalSubtasks}',
+                          '${progressInfo.done}/${progressInfo.total}',
                           style: theme.textTheme.labelSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
@@ -174,4 +211,27 @@ class TaskCard extends StatelessWidget {
     final h = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
     return '${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $suffix';
   }
+
+  _TaskProgressInfo _progressInfo(AsyncValue<List<SubtaskItem>> subtasksState) {
+    final subtasks = subtasksState.valueOrNull;
+    if (subtasks == null) {
+      return _TaskProgressInfo(
+        done: task.doneSubtasks,
+        total: task.totalSubtasks,
+      );
+    }
+    final total = subtasks.length;
+    final done = subtasks.where((subtask) => subtask.isDone).length;
+    return _TaskProgressInfo(done: done, total: total);
+  }
+}
+
+class _TaskProgressInfo {
+  const _TaskProgressInfo({
+    required this.done,
+    required this.total,
+  });
+
+  final int done;
+  final int total;
 }

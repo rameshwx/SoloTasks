@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/app_models.dart';
 import '../../core/providers/day_mode_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
+import '../../core/providers/subtask_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
@@ -118,7 +119,11 @@ class TodayTab extends ConsumerWidget {
                 switchInCurve: Curves.easeOut,
                 switchOutCurve: Curves.easeIn,
                 child: mode == DayMode.agenda
-                    ? _AgendaList(tasks: dayTasks)
+                    ? _AgendaList(
+                        tasks: dayTasks,
+                        onToggleComplete: (task) =>
+                            _toggleTaskCompletion(context, ref, task),
+                      )
                     : _TimelineList(tasks: dayTasks),
               ),
             ],
@@ -130,6 +135,32 @@ class TodayTab extends ConsumerWidget {
 
   bool _sameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  Future<void> _toggleTaskCompletion(
+    BuildContext context,
+    WidgetRef ref,
+    TaskViewModel task,
+  ) async {
+    final markDone = task.status != TaskStatus.done;
+    try {
+      await ref.read(taskListProvider.notifier).setTaskStatus(
+            taskId: task.id,
+            status: markDone ? TaskStatus.done : TaskStatus.todo,
+          );
+      if (markDone) {
+        await ref
+            .read(taskSubtaskControllerProvider(task.id).notifier)
+            .markAllDone();
+      }
+      if (!context.mounted) return;
+      HapticFeedback.mediumImpact();
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update task: $error')),
+      );
+    }
   }
 }
 
@@ -346,9 +377,13 @@ class _ToggleItem extends StatelessWidget {
 }
 
 class _AgendaList extends StatelessWidget {
-  const _AgendaList({required this.tasks});
+  const _AgendaList({
+    required this.tasks,
+    required this.onToggleComplete,
+  });
 
   final List<TaskViewModel> tasks;
+  final Future<void> Function(TaskViewModel task) onToggleComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -364,7 +399,10 @@ class _AgendaList extends StatelessWidget {
       key: const ValueKey('agenda'),
       children: [
         for (var i = 0; i < tasks.length; i++) ...[
-          TaskCard(task: tasks[i])
+          TaskCard(
+            task: tasks[i],
+            onToggleComplete: () => onToggleComplete(tasks[i]),
+          )
               .animate(delay: (i * 65).ms)
               .fadeIn(duration: 260.ms)
               .slideY(begin: 0.08, end: 0),
@@ -431,6 +469,15 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final subtasksState =
+        ref.watch(taskSubtaskControllerProvider(widget.task.id));
+    final subtasks = subtasksState.valueOrNull;
+    final totalSubtasks = subtasks?.length ?? widget.task.totalSubtasks;
+    final doneSubtasks = subtasks?.where((subtask) => subtask.isDone).length ??
+        widget.task.doneSubtasks;
+    final hasSubtasks = totalSubtasks > 0;
+    final progressPercent =
+        hasSubtasks ? (doneSubtasks / totalSubtasks) * 100 : 0.0;
     final startMin = _previewStartMin ?? widget.task.startMin;
     final endMin = _previewEndMin ?? widget.task.endMin;
     final isEditing = _previewStartMin != null || _previewEndMin != null;
@@ -487,6 +534,18 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
+                        IconButton(
+                          onPressed: _toggleComplete,
+                          visualDensity: VisualDensity.compact,
+                          icon: Icon(
+                            widget.task.status == TaskStatus.done
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: widget.task.status == TaskStatus.done
+                                ? AppPalette.success
+                                : theme.subduedText,
+                          ),
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
@@ -547,7 +606,7 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
                   ],
                 ),
               ),
-              if (widget.task.hasSubtasks)
+              if (hasSubtasks)
                 Padding(
                   padding: const EdgeInsets.only(left: 10),
                   child: SizedBox(
@@ -557,7 +616,7 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
                       alignment: Alignment.center,
                       children: [
                         CircularProgressIndicator(
-                          value: (widget.task.progressPercent ?? 0) / 100,
+                          value: progressPercent / 100,
                           strokeWidth: 4,
                           color: AppPalette.teal,
                           backgroundColor: theme.isDark
@@ -565,7 +624,7 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
                               : Colors.black.withValues(alpha: 0.08),
                         ),
                         Text(
-                          '${widget.task.doneSubtasks}/${widget.task.totalSubtasks}',
+                          '$doneSubtasks/$totalSubtasks',
                           style: theme.textTheme.labelSmall?.copyWith(
                               color: AppPalette.teal,
                               fontWeight: FontWeight.w800),
@@ -688,6 +747,27 @@ class _TimelineCardState extends ConsumerState<_TimelineCard> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  Future<void> _toggleComplete() async {
+    final markDone = widget.task.status != TaskStatus.done;
+    try {
+      await ref.read(taskListProvider.notifier).setTaskStatus(
+            taskId: widget.task.id,
+            status: markDone ? TaskStatus.done : TaskStatus.todo,
+          );
+      if (markDone) {
+        await ref
+            .read(taskSubtaskControllerProvider(widget.task.id).notifier)
+            .markAllDone();
+      }
+      HapticFeedback.mediumImpact();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update task: $error')),
+      );
     }
   }
 

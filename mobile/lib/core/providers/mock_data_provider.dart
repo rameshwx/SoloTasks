@@ -113,6 +113,50 @@ class TaskListController extends StateNotifier<List<TaskViewModel>> {
     await _attemptSync();
   }
 
+  Future<void> setTaskStatus({
+    required String taskId,
+    required TaskStatus status,
+  }) async {
+    final current = state.cast<TaskViewModel?>().firstWhere(
+          (task) => task?.id == taskId,
+          orElse: () => null,
+        );
+    if (current == null || current.status == status) return;
+
+    final updated = TaskViewModel(
+      id: current.id,
+      title: current.title,
+      status: status,
+      dateLocal: current.dateLocal,
+      startMin: current.startMin,
+      endMin: current.endMin,
+      tags: current.tags,
+      totalSubtasks: current.totalSubtasks,
+      doneSubtasks: current.doneSubtasks,
+      hasAttachment: current.hasAttachment,
+    );
+
+    final next = [
+      for (final task in state)
+        if (task.id == taskId) updated else task,
+    ];
+    _sortTasks(next);
+    state = next;
+
+    final db = _ref.read(appDatabaseProvider);
+    final dbTask = await (db.select(db.tasks)
+          ..where((t) => t.id.equals(taskId)))
+        .getSingleOrNull();
+    final now = DateTime.now().toUtc();
+    await _upsertTaskLocally(
+      task: updated,
+      now: now,
+      enqueueOutbox: true,
+      description: dbTask?.description,
+    );
+    await _attemptSync();
+  }
+
   Future<void> _upsertTaskLocally({
     required TaskViewModel task,
     required DateTime now,

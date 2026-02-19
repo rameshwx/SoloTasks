@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/app_models.dart';
 import '../../core/models/remote_models.dart';
 import '../../core/providers/mock_data_provider.dart';
+import '../../core/providers/subtask_provider.dart';
 import '../../core/providers/tag_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
@@ -68,7 +69,9 @@ class _TasksTabState extends ConsumerState<TasksTab> {
               ),
               const SizedBox(height: 10),
               for (var i = 0; i < filtered.length; i++) ...[
-                _ResultTaskTile(task: filtered[i])
+                _ResultTaskTile(
+                  task: filtered[i],
+                )
                     .animate(delay: (i * 55).ms)
                     .fadeIn(duration: 240.ms)
                     .slideY(begin: 0.04, end: 0),
@@ -358,30 +361,50 @@ class _SmartListCard extends StatelessWidget {
   }
 }
 
-class _ResultTaskTile extends StatelessWidget {
+class _ResultTaskTile extends ConsumerWidget {
   const _ResultTaskTile({required this.task});
 
   final TaskViewModel task;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final subtasksState = ref.watch(taskSubtaskControllerProvider(task.id));
+    final subtasks = subtasksState.valueOrNull;
+    final totalSubtasks = subtasks?.length ?? task.totalSubtasks;
+    final doneSubtasks = subtasks?.where((subtask) => subtask.isDone).length ??
+        task.doneSubtasks;
+    final hasSubtasks = totalSubtasks > 0;
+    final percent =
+        hasSubtasks ? ((doneSubtasks / totalSubtasks) * 100).round() : 0;
+    final isDone = task.status == TaskStatus.done;
+
     return GlassContainer(
       borderRadius: 28,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.radio_button_unchecked,
-              color: Color(0xFF738B96), size: 34),
+          IconButton(
+            onPressed: () => _toggleComplete(ref, context, isDone),
+            icon: Icon(
+              isDone
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: isDone ? AppPalette.success : const Color(0xFF738B96),
+              size: 30,
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(task.title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700)),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          decoration:
+                              isDone ? TextDecoration.lineThrough : null,
+                          color: isDone ? Theme.of(context).subduedText : null,
+                        )),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -414,6 +437,16 @@ class _ResultTaskTile extends StatelessWidget {
                             ?.copyWith(color: Theme.of(context).subduedText)),
                   ],
                 ),
+                if (hasSubtasks) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tasks $doneSubtasks/$totalSubtasks : $percent% completed',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).subduedText,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -436,6 +469,30 @@ class _ResultTaskTile extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleComplete(
+    WidgetRef ref,
+    BuildContext context,
+    bool currentlyDone,
+  ) async {
+    final markDone = !currentlyDone;
+    try {
+      await ref.read(taskListProvider.notifier).setTaskStatus(
+            taskId: task.id,
+            status: markDone ? TaskStatus.done : TaskStatus.todo,
+          );
+      if (markDone) {
+        await ref
+            .read(taskSubtaskControllerProvider(task.id).notifier)
+            .markAllDone();
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update task: $error')),
+      );
+    }
   }
 
   String _formatTime(int totalMin) {
