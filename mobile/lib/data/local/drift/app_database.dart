@@ -174,7 +174,10 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<Task>> listTasksForDay(DateTime day) {
     final dayKey = _dayString(day);
-    return (select(tasks)..where((tbl) => tbl.dateLocal.equals(dayKey) & tbl.deletedAt.isNull())).get();
+    return (select(tasks)
+          ..where(
+              (tbl) => tbl.dateLocal.equals(dayKey) & tbl.deletedAt.isNull()))
+        .get();
   }
 
   Future<void> upsertHoliday({

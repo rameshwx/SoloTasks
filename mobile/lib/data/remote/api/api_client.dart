@@ -1,7 +1,8 @@
 import 'package:dio/dio.dart';
 
 class ApiClient {
-  ApiClient({required String baseUrl}) : _dio = Dio(BaseOptions(baseUrl: baseUrl));
+  ApiClient({required String baseUrl})
+      : _dio = Dio(BaseOptions(baseUrl: baseUrl));
 
   final Dio _dio;
 

@@ -33,7 +33,8 @@ final taskListProvider = StateProvider<List<TaskViewModel>>((_) {
   ];
 });
 
-final holidayDatesProvider = StateProvider<Map<DateTime, List<HolidayType>>>((_) {
+final holidayDatesProvider =
+    StateProvider<Map<DateTime, List<HolidayType>>>((_) {
   final now = DateTime.now();
   return {
     DateTime(now.year, now.month, now.day): [HolidayType.public],

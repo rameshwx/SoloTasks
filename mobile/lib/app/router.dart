@@ -12,7 +12,8 @@ import 'shell_scaffold.dart';
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/home',
-    refreshListenable: GoRouterRefreshStream(ref.watch(authControllerProvider.notifier).stream),
+    refreshListenable: GoRouterRefreshStream(
+        ref.watch(authControllerProvider.notifier).stream),
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       if (!auth.initialized) return null;
@@ -32,7 +33,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/task/:taskId',
-        builder: (context, state) => TaskDetailScreen(taskId: state.pathParameters['taskId']!),
+        builder: (context, state) =>
+            TaskDetailScreen(taskId: state.pathParameters['taskId']!),
       ),
     ],
   );

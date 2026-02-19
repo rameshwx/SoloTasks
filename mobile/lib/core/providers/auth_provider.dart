@@ -39,8 +39,10 @@ class AuthController extends StateNotifier<AuthState> {
     state = state.copyWith(initialized: true, isAuthenticated: hasSession);
   }
 
-  Future<void> loginWithOtp({required String accessToken, required String refreshToken}) async {
-    await _sessionService.saveSession(accessToken: accessToken, refreshToken: refreshToken);
+  Future<void> loginWithOtp(
+      {required String accessToken, required String refreshToken}) async {
+    await _sessionService.saveSession(
+        accessToken: accessToken, refreshToken: refreshToken);
     state = state.copyWith(isAuthenticated: true, initialized: true);
   }
 
@@ -50,7 +52,8 @@ class AuthController extends StateNotifier<AuthState> {
   }
 }
 
-final authControllerProvider = StateNotifierProvider<AuthController, AuthState>((ref) {
+final authControllerProvider =
+    StateNotifierProvider<AuthController, AuthState>((ref) {
   final controller = AuthController(ref.watch(sessionServiceProvider));
   Future<void>.microtask(controller.bootstrap);
   return controller;

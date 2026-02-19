@@ -16,7 +16,8 @@ class ExportImportScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.data_object),
                   title: const Text('Export JSON'),
-                  subtitle: const Text('Full fidelity backup including holidays'),
+                  subtitle:
+                      const Text('Full fidelity backup including holidays'),
                   onTap: () => _showSnack(context, 'JSON export placeholder'),
                 ),
                 ListTile(

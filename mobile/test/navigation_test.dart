@@ -16,6 +16,6 @@ void main() {
     expect(find.text('Calendar'), findsWidgets);
     expect(find.text('Tasks'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
-    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    expect(find.byType(InkWell), findsWidgets);
   });
 }

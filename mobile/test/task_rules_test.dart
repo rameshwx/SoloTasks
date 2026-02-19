@@ -14,7 +14,8 @@ void main() {
 
   group('Scheduling constraints', () {
     test('accepts valid same-day window', () {
-      expect(() => validateTaskWindow(startMin: 540, endMin: 600), returnsNormally);
+      expect(() => validateTaskWindow(startMin: 540, endMin: 600),
+          returnsNormally);
     });
 
     test('rejects midnight crossing task', () {

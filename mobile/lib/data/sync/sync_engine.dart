@@ -38,11 +38,13 @@ class SyncEngine {
           .toList();
 
       if (ops.isNotEmpty) {
-        await apiClient.syncPush(accessToken: accessToken, deviceId: deviceId, ops: ops);
+        await apiClient.syncPush(
+            accessToken: accessToken, deviceId: deviceId, ops: ops);
         await database.delete(database.outboxOps).go();
       }
 
-      final syncStateRow = await database.select(database.syncState).getSingleOrNull();
+      final syncStateRow =
+          await database.select(database.syncState).getSingleOrNull();
       final cursor = syncStateRow?.cursor ?? 0;
 
       final pull = await apiClient.syncPull(
