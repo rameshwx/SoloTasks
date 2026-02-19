@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${DB_BIND_HOST:-127.0.0.1}:${DB_HOST_PORT:-5432}:5432"
 
   minio:
     image: minio/minio:latest
@@ -21,8 +21,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_BIND_HOST:-127.0.0.1}:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
 
   mc-init:
     image: minio/mc:latest
@@ -47,7 +47,7 @@ services:
     volumes:
       - storage_data:/data/storage
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${API_BIND_HOST:-127.0.0.1}:${API_HOST_PORT:-8000}:8000"
 
 volumes:
   pgdata:
