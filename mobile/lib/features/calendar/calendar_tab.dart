@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../core/models/app_models.dart';
+import '../../core/models/user_preferences.dart';
 import '../../core/providers/day_mode_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
 import '../../core/providers/subtask_provider.dart';
+import '../../core/providers/user_preferences_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
@@ -29,9 +31,15 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
     final selectedDay = ref.watch(selectedDayProvider);
     final tasks = ref.watch(taskListProvider);
     final holidayMap = ref.watch(holidayDatesProvider);
+    final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+    final hideTasksOnHolidays =
+        prefs?.holidayPrefs.hideTasksOnHolidays ?? false;
 
     final selectedTasks = tasks.where((task) {
-      return _dayKey(task.dateLocal) == _dayKey(selectedDay);
+      final sameDay = _dayKey(task.dateLocal) == _dayKey(selectedDay);
+      if (!sameDay) return false;
+      if (!hideTasksOnHolidays) return true;
+      return (holidayMap[_dayKey(task.dateLocal)] ?? const []).isEmpty;
     }).toList()
       ..sort((a, b) => a.startMin.compareTo(b.startMin));
 
@@ -56,7 +64,11 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
                           _dayKey(day) == _dayKey(selectedDay),
                       headerVisible: false,
                       rowHeight: 54,
-                      startingDayOfWeek: StartingDayOfWeek.sunday,
+                      startingDayOfWeek: (prefs?.calendarPrefs.weekStart ??
+                                  WeekStart.sunday) ==
+                              WeekStart.monday
+                          ? StartingDayOfWeek.monday
+                          : StartingDayOfWeek.sunday,
                       availableGestures: AvailableGestures.horizontalSwipe,
                       onDaySelected: (selected, focused) {
                         ref.read(selectedDayProvider.notifier).state = DateTime(
@@ -117,51 +129,9 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    SegmentedButton<DayMode>(
-                      segments: const [
-                        ButtonSegment(
-                            value: DayMode.agenda, label: Text('Agenda')),
-                        ButtonSegment(
-                            value: DayMode.timeline, label: Text('Timeline')),
-                      ],
-                      selected: {ref.watch(dayModeProvider)},
-                      onSelectionChanged: (selection) {
-                        ref.read(dayModeProvider.notifier).state =
-                            selection.first;
-                      },
-                    ),
                   ],
                 ),
               ).animate().fadeIn(duration: 280.ms).slideY(begin: 0.06, end: 0),
-              const SizedBox(height: 18),
-              Text(
-                'Upcoming Highlights',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700, fontSize: 32 / 2),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 136,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    _highlightCard(context,
-                        title: 'Independence Day',
-                        subtitle: 'Sept 15 • All Day',
-                        type: 'Holiday',
-                        accent: AppPalette.success),
-                    const SizedBox(width: 12),
-                    _highlightCard(context,
-                        title: 'Project Review',
-                        subtitle: 'Sept 18 • 10:00 AM',
-                        type: 'Work',
-                        accent: AppPalette.teal),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               for (final task in selectedTasks) ...[
                 TaskCard(
@@ -261,54 +231,6 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
     );
   }
 
-  Widget _highlightCard(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required String type,
-    required Color accent,
-  }) {
-    return SizedBox(
-      width: 196,
-      child: GlassContainer(
-        borderRadius: 26,
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                    width: 8,
-                    height: 8,
-                    decoration:
-                        BoxDecoration(color: accent, shape: BoxShape.circle)),
-                const SizedBox(width: 8),
-                Text(type,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelLarge
-                        ?.copyWith(color: accent, fontWeight: FontWeight.w700)),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(title,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text(subtitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Theme.of(context).subduedText)),
-          ],
-        ),
-      ),
-    );
-  }
-
   String _monthName(int month) {
     const names = [
       'January',
@@ -334,10 +256,12 @@ class _CalendarTabState extends ConsumerState<CalendarTab> {
             taskId: task.id,
             status: markDone ? TaskStatus.done : TaskStatus.todo,
           );
+      final subtaskCtrl =
+          ref.read(taskSubtaskControllerProvider(task.id).notifier);
       if (markDone) {
-        await ref
-            .read(taskSubtaskControllerProvider(task.id).notifier)
-            .markAllDone();
+        await subtaskCtrl.markAllDone();
+      } else {
+        await subtaskCtrl.markAllUndone();
       }
       if (!mounted) return;
       HapticFeedback.mediumImpact();

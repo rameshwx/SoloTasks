@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/logic/time_format.dart';
 import '../../core/models/app_models.dart';
 import '../../core/models/remote_models.dart';
+import '../../core/models/user_preferences.dart';
 import '../../core/providers/mock_data_provider.dart';
 import '../../core/providers/subtask_provider.dart';
 import '../../core/providers/tag_provider.dart';
+import '../../core/providers/task_tag_provider.dart';
+import '../../core/providers/user_preferences_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
@@ -35,14 +39,38 @@ class _TasksTabState extends ConsumerState<TasksTab> {
   Widget build(BuildContext context) {
     final tasks = ref.watch(taskListProvider);
     final tagsState = ref.watch(tagControllerProvider);
+    final holidayMap = ref.watch(holidayDatesProvider);
+    final prefs = ref.watch(userPreferencesProvider).valueOrNull;
     final query = _searchCtrl.text.trim().toLowerCase();
+    final hideTasksOnHolidays =
+        prefs?.holidayPrefs.hideTasksOnHolidays ?? false;
+    final taskTagNamesById = <String, List<String>>{
+      for (final task in tasks)
+        task.id: () {
+          final remote =
+              ref.watch(taskTagControllerProvider(task.id)).valueOrNull;
+          if (remote == null || remote.isEmpty) return task.tags;
+          return remote.map((tag) => tag.name).toList();
+        }(),
+    };
 
     final filtered = tasks.where((task) {
+      if (hideTasksOnHolidays &&
+          (holidayMap[DateTime(
+                    task.dateLocal.year,
+                    task.dateLocal.month,
+                    task.dateLocal.day,
+                  )] ??
+                  const [])
+              .isNotEmpty) {
+        return false;
+      }
       final matchesSearch = task.title.toLowerCase().contains(query);
       final matchesAttachment = !_hasAttachments || task.hasAttachment;
+      final taskTags = taskTagNamesById[task.id] ?? task.tags;
       final matchesTag = _selectedTagName == null
           ? true
-          : task.tags.any((tag) => tag == _selectedTagName);
+          : taskTags.any((tag) => tag == _selectedTagName);
       return matchesSearch && matchesAttachment && matchesTag;
     }).toList();
 
@@ -55,10 +83,6 @@ class _TasksTabState extends ConsumerState<TasksTab> {
               _header(context),
               const SizedBox(height: 14),
               _filterRow(context, tagsState),
-              const SizedBox(height: 18),
-              _smartListHeader(context),
-              const SizedBox(height: 10),
-              _smartLists(context),
               const SizedBox(height: 20),
               Text(
                 'Recent Results',
@@ -71,6 +95,7 @@ class _TasksTabState extends ConsumerState<TasksTab> {
               for (var i = 0; i < filtered.length; i++) ...[
                 _ResultTaskTile(
                   task: filtered[i],
+                  displayTags: taskTagNamesById[filtered[i].id] ?? const [],
                 )
                     .animate(delay: (i * 55).ms)
                     .fadeIn(duration: 240.ms)
@@ -104,6 +129,12 @@ class _TasksTabState extends ConsumerState<TasksTab> {
                 borderRadius: 28,
                 padding: const EdgeInsets.all(8),
                 child: const Icon(Icons.person, color: AppPalette.teal),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _openTagManager,
+                icon: const Icon(Icons.sell_rounded),
+                label: const Text('Tags'),
               ),
             ],
           ),
@@ -159,49 +190,6 @@ class _TasksTabState extends ConsumerState<TasksTab> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _smartListHeader(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          'Smart Lists',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const Spacer(),
-        TextButton(
-            onPressed: _openTagManager, child: const Text('Manage Tags')),
-      ],
-    );
-  }
-
-  Widget _smartLists(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _SmartListCard(
-            icon: Icons.work,
-            iconColor: AppPalette.success,
-            title: 'Work',
-            subtitle: 'Next 7 Days',
-            count: '12',
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _SmartListCard(
-            icon: Icons.block,
-            iconColor: AppPalette.danger,
-            title: 'Blocked',
-            subtitle: 'Requires Action',
-            count: '3',
-          ),
-        ),
-      ],
     );
   }
 
@@ -301,74 +289,24 @@ class _FilterChipBtn extends StatelessWidget {
   }
 }
 
-class _SmartListCard extends StatelessWidget {
-  const _SmartListCard({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.count,
+class _ResultTaskTile extends ConsumerWidget {
+  const _ResultTaskTile({
+    required this.task,
+    required this.displayTags,
   });
 
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String count;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassContainer(
-      borderRadius: 28,
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, color: iconColor),
-              ),
-              const Spacer(),
-              Text(count,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineMedium
-                      ?.copyWith(fontWeight: FontWeight.w800)),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(title,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.w700, fontSize: 35 / 2)),
-          const SizedBox(height: 4),
-          Text(subtitle,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).subduedText)),
-        ],
-      ),
-    );
-  }
-}
-
-class _ResultTaskTile extends ConsumerWidget {
-  const _ResultTaskTile({required this.task});
-
   final TaskViewModel task;
+  final List<String> displayTags;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final subtasksState = ref.watch(taskSubtaskControllerProvider(task.id));
+    final timeFormat = ref
+            .watch(userPreferencesProvider)
+            .valueOrNull
+            ?.calendarPrefs
+            .timeFormat ??
+        UserTimeFormat.system;
     final subtasks = subtasksState.valueOrNull;
     final totalSubtasks = subtasks?.length ?? task.totalSubtasks;
     final doneSubtasks = subtasks?.where((subtask) => subtask.isDone).length ??
@@ -412,7 +350,7 @@ class _ResultTaskTile extends ConsumerWidget {
                         size: 16, color: Theme.of(context).subduedText),
                     const SizedBox(width: 4),
                     Text(
-                      _formatTime(task.startMin),
+                      _formatTime(context, task.startMin, timeFormat),
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                             color: task.status == TaskStatus.blocked
                                 ? AppPalette.danger
@@ -430,7 +368,7 @@ class _ResultTaskTile extends ConsumerWidget {
                     Icon(Icons.folder_outlined,
                         size: 16, color: Theme.of(context).subduedText),
                     const SizedBox(width: 4),
-                    Text(task.tags.isEmpty ? 'General' : task.tags.first,
+                    Text(displayTags.isEmpty ? 'General' : displayTags.first,
                         style: Theme.of(context)
                             .textTheme
                             .bodyLarge
@@ -482,10 +420,12 @@ class _ResultTaskTile extends ConsumerWidget {
             taskId: task.id,
             status: markDone ? TaskStatus.done : TaskStatus.todo,
           );
+      final subtaskCtrl =
+          ref.read(taskSubtaskControllerProvider(task.id).notifier);
       if (markDone) {
-        await ref
-            .read(taskSubtaskControllerProvider(task.id).notifier)
-            .markAllDone();
+        await subtaskCtrl.markAllDone();
+      } else {
+        await subtaskCtrl.markAllUndone();
       }
     } catch (error) {
       if (!context.mounted) return;
@@ -495,11 +435,11 @@ class _ResultTaskTile extends ConsumerWidget {
     }
   }
 
-  String _formatTime(int totalMin) {
-    final hour = totalMin ~/ 60;
-    final minute = totalMin % 60;
-    final suffix = hour >= 12 ? 'PM' : 'AM';
-    final h = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-    return 'Today ${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $suffix';
+  String _formatTime(
+    BuildContext context,
+    int totalMin,
+    UserTimeFormat timeFormat,
+  ) {
+    return 'Today ${formatMinutesForPreference(context, totalMin, timeFormat)}';
   }
 }

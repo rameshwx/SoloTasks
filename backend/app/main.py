@@ -13,6 +13,7 @@ from app.modules.smart_lists.router import router as smart_lists_router
 from app.modules.subtasks.router import router as subtasks_router
 from app.modules.tags.router import router as tags_router
 from app.modules.tasks.router import router as tasks_router
+from app.modules.user_settings.router import router as user_settings_router
 from app.sync.router import router as sync_router
 
 settings = get_settings()
@@ -38,6 +39,7 @@ app.include_router(attachments_router, prefix=api)
 app.include_router(holidays_router, prefix=api)
 app.include_router(smart_lists_router, prefix=api)
 app.include_router(export_import_router, prefix=api)
+app.include_router(user_settings_router, prefix=api)
 
 
 @app.get("/health")

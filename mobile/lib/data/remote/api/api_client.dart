@@ -47,6 +47,24 @@ class ApiClient {
     return _dio.post('/v1/auth/refresh', data: {'refreshToken': refreshToken});
   }
 
+  Future<Response<dynamic>> getPreferences({required String accessToken}) {
+    return _dio.get(
+      '/v1/settings/preferences',
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> putPreferences({
+    required String accessToken,
+    required Map<String, dynamic> payload,
+  }) {
+    return _dio.put(
+      '/v1/settings/preferences',
+      data: payload,
+      options: _authOptions(accessToken),
+    );
+  }
+
   Future<Response<dynamic>> listTags({required String accessToken}) {
     return _dio.get('/v1/tags', options: _authOptions(accessToken));
   }
@@ -88,6 +106,61 @@ class ApiClient {
   }) {
     return _dio.delete(
       '/v1/tags/$tagId',
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> listHolidays({
+    required String accessToken,
+    int? year,
+    String? type,
+  }) {
+    final query = <String, dynamic>{};
+    if (year != null) query['year'] = year;
+    if (type != null && type.isNotEmpty) query['type'] = type;
+    return _dio.get(
+      '/v1/holidays',
+      queryParameters: query.isEmpty ? null : query,
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> createHoliday({
+    required String accessToken,
+    required String dateLocal,
+    required String type,
+    String? label,
+    String? id,
+  }) {
+    return _dio.post(
+      '/v1/holidays',
+      data: {
+        if (id != null) 'id': id,
+        'dateLocal': dateLocal,
+        'type': type,
+        if (label != null && label.isNotEmpty) 'label': label,
+      },
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> deleteHoliday({
+    required String accessToken,
+    required String holidayId,
+  }) {
+    return _dio.delete(
+      '/v1/holidays/$holidayId',
+      options: _authOptions(accessToken),
+    );
+  }
+
+  Future<Response<dynamic>> clearHolidayTypeForYear({
+    required String accessToken,
+    required int year,
+    required String type,
+  }) {
+    return _dio.delete(
+      '/v1/holidays/year/$year/type/$type',
       options: _authOptions(accessToken),
     );
   }

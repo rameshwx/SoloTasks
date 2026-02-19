@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/logic/time_format.dart';
 import '../../core/models/app_models.dart';
 import '../../core/models/remote_models.dart';
+import '../../core/models/user_preferences.dart';
 import '../../core/providers/attachment_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
 import '../../core/providers/reminder_provider.dart';
 import '../../core/providers/subtask_provider.dart';
 import '../../core/providers/tag_provider.dart';
 import '../../core/providers/task_tag_provider.dart';
+import '../../core/providers/user_preferences_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/aurora_background.dart';
 import '../../shared/widgets/glass_container.dart';
@@ -43,6 +46,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
         ref.watch(taskSubtaskControllerProvider(widget.taskId));
     final taskTagsState = ref.watch(taskTagControllerProvider(widget.taskId));
     final allTagsState = ref.watch(tagControllerProvider);
+    final timeFormat = ref
+            .watch(userPreferencesProvider)
+            .valueOrNull
+            ?.calendarPrefs
+            .timeFormat ??
+        UserTimeFormat.system;
 
     if (task == null) {
       return Scaffold(
@@ -67,8 +76,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
             children: [
               _header(context),
               const SizedBox(height: 14),
-              _heroCard(context, task,
-                  taskTagsState.valueOrNull ?? const <TagItem>[]),
+              _heroCard(
+                context,
+                task,
+                taskTagsState.valueOrNull ?? const <TagItem>[],
+                timeFormat,
+              ),
               const SizedBox(height: 18),
               _taskTagSection(context, taskTagsState, allTagsState),
               const SizedBox(height: 18),
@@ -78,7 +91,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               const SizedBox(height: 18),
               _attachmentSection(context, attachmentsState),
               const SizedBox(height: 18),
-              _notesSection(context, task),
+              _notesSection(context, task, timeFormat),
             ],
           ),
         ),
@@ -137,7 +150,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   }
 
   Widget _heroCard(
-      BuildContext context, TaskViewModel task, List<TagItem> assignedTags) {
+    BuildContext context,
+    TaskViewModel task,
+    List<TagItem> assignedTags,
+    UserTimeFormat timeFormat,
+  ) {
     final tagLabel = assignedTags.isNotEmpty
         ? assignedTags.map((e) => e.name).join(' • ')
         : (task.tags.isEmpty ? 'General' : task.tags.join(' • '));
@@ -169,7 +186,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
               _pill(
                 context,
                 icon: Icons.schedule_rounded,
-                label: _taskWindowLabel(task),
+                label: _taskWindowLabel(context, task, timeFormat),
                 color: Theme.of(context).subduedText,
               ),
               const SizedBox(width: 10),
@@ -549,7 +566,11 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     );
   }
 
-  Widget _notesSection(BuildContext context, TaskViewModel task) {
+  Widget _notesSection(
+    BuildContext context,
+    TaskViewModel task,
+    UserTimeFormat timeFormat,
+  ) {
     return GlassContainer(
       borderRadius: 26,
       child: Column(
@@ -572,7 +593,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
           Text(
             'Task ID: ${task.id}\n\n'
             'Status: ${_statusLabel(task.status)}\n'
-            'Window: ${_taskWindowLabel(task)}',
+            'Window: ${_taskWindowLabel(context, task, timeFormat)}',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
           ),
         ],
@@ -590,7 +611,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       return;
     }
     if (allTags.isEmpty) {
-      _snack('No tags exist. Create tags from the Tasks tab first.');
+      _snack('No tags exist. Create tags from Settings > Tags first.');
       return;
     }
 
@@ -788,6 +809,10 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   }
 
   Future<void> _addReminder() async {
+    final reminderDefaults =
+        ref.read(userPreferencesProvider).valueOrNull?.reminderDefaults;
+    final options =
+        reminderDefaults?.quickOptions ?? const <int>[5, 10, 15, 30, 60];
     final selected = await showModalBottomSheet<int?>(
       context: context,
       useSafeArea: true,
@@ -806,9 +831,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                       Icon(Icons.alarm_add_rounded, color: AppPalette.teal),
                   title: Text('Add Reminder'),
                 ),
-                for (final offset in const [5, 10, 15, 30, 60])
+                for (final offset in options)
                   ListTile(
                     title: Text('$offset min before start'),
+                    subtitle: offset == reminderDefaults?.defaultRelativeMin
+                        ? const Text('Default')
+                        : null,
                     onTap: () => Navigator.of(context).pop(offset),
                   ),
                 ListTile(
@@ -921,16 +949,12 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     }
   }
 
-  String _taskWindowLabel(TaskViewModel task) {
-    return '${_formatTime(task.startMin)} - ${_formatTime(task.endMin)}';
-  }
-
-  String _formatTime(int totalMin) {
-    final hour = totalMin ~/ 60;
-    final minute = totalMin % 60;
-    final suffix = hour >= 12 ? 'PM' : 'AM';
-    final h = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-    return '${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $suffix';
+  String _taskWindowLabel(
+    BuildContext context,
+    TaskViewModel task,
+    UserTimeFormat timeFormat,
+  ) {
+    return '${formatMinutesForPreference(context, task.startMin, timeFormat)} - ${formatMinutesForPreference(context, task.endMin, timeFormat)}';
   }
 
   String _statusLabel(TaskStatus status) {

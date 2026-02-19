@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/logic/time_format.dart';
 import '../../core/models/app_models.dart';
 import '../../core/models/remote_models.dart';
+import '../../core/models/user_preferences.dart';
 import '../../core/providers/subtask_provider.dart';
+import '../../core/providers/task_tag_provider.dart';
+import '../../core/providers/user_preferences_provider.dart';
 import '../../core/theme/app_palette.dart';
 import 'glass_container.dart';
 
@@ -24,6 +28,12 @@ class TaskCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final subtasksState = ref.watch(taskSubtaskControllerProvider(task.id));
+    final taskTags = ref.watch(taskTagControllerProvider(task.id)).valueOrNull;
+    final prefs = ref.watch(userPreferencesProvider).valueOrNull;
+    final timeFormat = prefs?.calendarPrefs.timeFormat ?? UserTimeFormat.system;
+    final displayTags = (taskTags == null || taskTags.isEmpty)
+        ? task.tags
+        : taskTags.map((tag) => tag.name).toList();
     final progressInfo = _progressInfo(subtasksState);
     final hasSubtasks = progressInfo.total > 0;
     final progressPercent = hasSubtasks
@@ -74,7 +84,7 @@ class TaskCard extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${_fmt(task.startMin)} - ${_fmt(task.endMin)}',
+                        '${formatMinutesForPreference(context, task.startMin, timeFormat)} - ${formatMinutesForPreference(context, task.endMin, timeFormat)}',
                         style: theme.textTheme.bodyMedium
                             ?.copyWith(color: theme.subduedText),
                       ),
@@ -89,7 +99,7 @@ class TaskCard extends ConsumerWidget {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final tag in task.tags)
+                for (final tag in displayTags)
                   Chip(
                     label: Text(tag),
                     labelStyle: const TextStyle(
@@ -202,14 +212,6 @@ class TaskCard extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  static String _fmt(int totalMin) {
-    final hour = totalMin ~/ 60;
-    final minute = totalMin % 60;
-    final suffix = hour >= 12 ? 'PM' : 'AM';
-    final h = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-    return '${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $suffix';
   }
 
   _TaskProgressInfo _progressInfo(AsyncValue<List<SubtaskItem>> subtasksState) {

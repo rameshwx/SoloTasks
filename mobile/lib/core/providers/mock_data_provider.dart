@@ -9,6 +9,8 @@ import 'package:uuid/uuid.dart';
 import '../../data/local/drift/app_database.dart';
 import '../logic/task_rules.dart';
 import '../models/app_models.dart';
+import '../models/remote_models.dart';
+import '../services/authed_api_service.dart';
 import 'api_provider.dart';
 import 'auth_provider.dart';
 import 'database_provider.dart';
@@ -40,7 +42,7 @@ class TaskListController extends StateNotifier<List<TaskViewModel>> {
     await _attemptSync();
   }
 
-  Future<void> addQuickTask({
+  Future<TaskViewModel> addQuickTask({
     required String title,
     required DateTime dateLocal,
     required int startMin,
@@ -75,6 +77,7 @@ class TaskListController extends StateNotifier<List<TaskViewModel>> {
       description: description,
     );
     await _attemptSync();
+    return task;
   }
 
   Future<void> rescheduleTask({
@@ -394,6 +397,7 @@ class HolidayDatesController
   }
 
   final Ref _ref;
+  final Map<String, String> _holidayIdsByKey = <String, String>{};
 
   Future<void> _bootstrap() async {
     final db = _ref.read(appDatabaseProvider);
@@ -401,19 +405,145 @@ class HolidayDatesController
           ..where((tbl) => tbl.deletedAt.isNull()))
         .get();
     final mapped = <DateTime, List<HolidayType>>{};
+    _holidayIdsByKey.clear();
     for (final row in rows) {
       final type = _parseType(row.type);
       if (type == null) continue;
       final day = _parseDate(row.dateLocal);
       mapped.putIfAbsent(day, () => <HolidayType>[]).add(type);
+      _holidayIdsByKey[_compoundKey(day, type)] = row.id;
     }
-    state = mapped;
+    state = _normalized(mapped);
+    unawaited(refreshFromServer());
   }
 
   void replaceAll(Map<DateTime, List<HolidayType>> next) {
-    state = {
-      for (final entry in next.entries) entry.key: [...entry.value],
-    };
+    state = _normalized(next);
+  }
+
+  Future<void> refreshFromServer() async {
+    try {
+      final items = await _fetchRemoteHolidays();
+      await _replaceFromRemote(items);
+    } catch (_) {
+      // Keep local state on network failures.
+    }
+  }
+
+  Future<void> saveAll(Map<DateTime, List<HolidayType>> next) async {
+    final normalizedNext = _normalized(next);
+    final currentEntries = _expand(state);
+    final nextEntries = _expand(normalizedNext);
+
+    final toRemove = currentEntries.difference(nextEntries);
+    final toAdd = nextEntries.difference(currentEntries);
+
+    try {
+      await _ref.read(authedApiServiceProvider).run((accessToken) async {
+        final api = _ref.read(apiClientProvider);
+        for (final key in toRemove) {
+          final id = _holidayIdsByKey[key];
+          if (id == null || id.isEmpty) continue;
+          await api.deleteHoliday(accessToken: accessToken, holidayId: id);
+        }
+        for (final key in toAdd) {
+          final parsed = _parseCompoundKey(key);
+          if (parsed == null) continue;
+          await api.createHoliday(
+            accessToken: accessToken,
+            dateLocal: _dateString(parsed.day),
+            type: parsed.type.name,
+          );
+        }
+        return;
+      });
+      await refreshFromServer();
+    } catch (_) {
+      // Keep local draft in-memory even if save fails.
+      state = normalizedNext;
+    }
+  }
+
+  Future<void> clearTypeForYear({
+    required int year,
+    required HolidayType type,
+  }) async {
+    try {
+      await _ref.read(authedApiServiceProvider).run((accessToken) async {
+        await _ref.read(apiClientProvider).clearHolidayTypeForYear(
+              accessToken: accessToken,
+              year: year,
+              type: type.name,
+            );
+        return;
+      });
+      await refreshFromServer();
+    } catch (_) {
+      final next = <DateTime, List<HolidayType>>{};
+      for (final entry in state.entries) {
+        if (entry.key.year != year) {
+          next[entry.key] = [...entry.value];
+          continue;
+        }
+        final values = [...entry.value]..remove(type);
+        if (values.isNotEmpty) {
+          next[entry.key] = values;
+        }
+      }
+      state = _normalized(next);
+    }
+  }
+
+  Future<List<HolidayItem>> _fetchRemoteHolidays() {
+    return _ref.read(authedApiServiceProvider).run((accessToken) async {
+      final response = await _ref
+          .read(apiClientProvider)
+          .listHolidays(accessToken: accessToken);
+      final data = response.data;
+      if (data is! List) return const <HolidayItem>[];
+      return data
+          .whereType<Map>()
+          .map((item) => HolidayItem.fromJson(item.cast<String, dynamic>()))
+          .toList();
+    });
+  }
+
+  Future<void> _replaceFromRemote(List<HolidayItem> items) async {
+    final mapped = <DateTime, List<HolidayType>>{};
+    final ids = <String, String>{};
+    for (final item in items) {
+      final type = _parseType(item.type);
+      if (type == null) continue;
+      final day = _parseDate(item.dateLocal);
+      mapped.putIfAbsent(day, () => <HolidayType>[]).add(type);
+      ids[_compoundKey(day, type)] = item.id;
+    }
+    _holidayIdsByKey
+      ..clear()
+      ..addAll(ids);
+    state = _normalized(mapped);
+    await _replaceLocalRows(items);
+  }
+
+  Future<void> _replaceLocalRows(List<HolidayItem> items) async {
+    final db = _ref.read(appDatabaseProvider);
+    final now = DateTime.now().toUtc();
+    await db.transaction(() async {
+      await db.delete(db.holidays).go();
+      for (final item in items) {
+        await db.into(db.holidays).insert(
+              HolidaysCompanion.insert(
+                id: item.id,
+                dateLocal: item.dateLocal,
+                type: item.type,
+                createdAt: item.createdAt ?? now,
+                updatedAt: item.updatedAt ?? now,
+                label: Value(item.label),
+                deletedAt: Value(item.deletedAt),
+              ),
+            );
+      }
+    });
   }
 
   HolidayType? _parseType(String value) {
@@ -434,4 +564,57 @@ class HolidayDatesController
       int.parse(parts[2]),
     );
   }
+
+  String _dateString(DateTime day) {
+    return '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+  }
+
+  String _compoundKey(DateTime day, HolidayType type) {
+    return '${_dateString(day)}|${type.name}';
+  }
+
+  _HolidayKey? _parseCompoundKey(String key) {
+    final parts = key.split('|');
+    if (parts.length != 2) return null;
+    final day = _parseDate(parts[0]);
+    final type = _parseType(parts[1]);
+    if (type == null) return null;
+    return _HolidayKey(day: day, type: type);
+  }
+
+  Map<DateTime, List<HolidayType>> _normalized(
+      Map<DateTime, List<HolidayType>> source) {
+    final normalized = <DateTime, List<HolidayType>>{};
+    for (final entry in source.entries) {
+      final key = DateTime(entry.key.year, entry.key.month, entry.key.day);
+      final values = <HolidayType>[];
+      for (final type in entry.value) {
+        if (!values.contains(type)) values.add(type);
+      }
+      if (values.isNotEmpty) {
+        normalized[key] = values;
+      }
+    }
+    return normalized;
+  }
+
+  Set<String> _expand(Map<DateTime, List<HolidayType>> source) {
+    final out = <String>{};
+    for (final entry in source.entries) {
+      for (final type in entry.value) {
+        out.add(_compoundKey(entry.key, type));
+      }
+    }
+    return out;
+  }
+}
+
+class _HolidayKey {
+  const _HolidayKey({
+    required this.day,
+    required this.type,
+  });
+
+  final DateTime day;
+  final HolidayType type;
 }

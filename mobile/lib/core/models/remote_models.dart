@@ -175,6 +175,38 @@ class UploadInitItem {
   }
 }
 
+class HolidayItem {
+  HolidayItem({
+    required this.id,
+    required this.dateLocal,
+    required this.type,
+    this.label,
+    this.createdAt,
+    this.updatedAt,
+    this.deletedAt,
+  });
+
+  final String id;
+  final String dateLocal;
+  final String type;
+  final String? label;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final DateTime? deletedAt;
+
+  factory HolidayItem.fromJson(Map<String, dynamic> json) {
+    return HolidayItem(
+      id: json['id'].toString(),
+      dateLocal: (json['date_local'] ?? json['dateLocal'] ?? '').toString(),
+      type: (json['type'] ?? '').toString(),
+      label: json['label']?.toString(),
+      createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
+      updatedAt: _parseDateTime(json['updated_at'] ?? json['updatedAt']),
+      deletedAt: _parseDateTime(json['deleted_at'] ?? json['deletedAt']),
+    );
+  }
+}
+
 DateTime? _parseDateTime(dynamic value) {
   if (value == null) return null;
   return DateTime.tryParse(value.toString());

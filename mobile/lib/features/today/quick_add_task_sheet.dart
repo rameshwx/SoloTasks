@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/app_models.dart';
+import '../../core/models/remote_models.dart';
 import '../../core/providers/day_mode_provider.dart';
 import '../../core/providers/mock_data_provider.dart';
+import '../../core/providers/tag_provider.dart';
+import '../../core/providers/task_tag_provider.dart';
+import '../../core/providers/user_preferences_provider.dart';
 import '../../core/theme/app_palette.dart';
 import '../../shared/widgets/glass_container.dart';
+import '../tasks/tag_manager_sheet.dart';
 
 class QuickAddTaskSheet extends ConsumerStatefulWidget {
   const QuickAddTaskSheet({super.key});
@@ -16,7 +22,7 @@ class QuickAddTaskSheet extends ConsumerStatefulWidget {
 
 class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
   final _titleCtrl = TextEditingController();
-  final _tagsCtrl = TextEditingController();
+  Set<String> _selectedTagIds = <String>{};
 
   late TimeOfDay _start;
   late TimeOfDay _end;
@@ -35,14 +41,23 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _tagsCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final selectedDay = ref.watch(selectedDayProvider);
+    final holidayMap = ref.watch(holidayDatesProvider);
+    final tagsState = ref.watch(tagControllerProvider);
+    final prefs = ref.watch(userPreferencesProvider).valueOrNull;
     final viewInsets = MediaQuery.of(context).viewInsets;
+    final holidays = holidayMap[selectedDay] ?? const [];
+    final showHolidayWarning =
+        prefs?.holidayPrefs.warnWhenSchedulingOnHoliday ?? true;
+    final selectedTagNames = (tagsState.valueOrNull ?? const <TagItem>[])
+        .where((tag) => _selectedTagIds.contains(tag.id))
+        .map((tag) => tag.name)
+        .toList();
 
     return Padding(
       padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + viewInsets.bottom),
@@ -58,13 +73,14 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
           children: [
             Row(
               children: [
-                const Icon(Icons.add_circle_outline_rounded, color: AppPalette.teal),
+                const Icon(Icons.add_circle_outline_rounded,
+                    color: AppPalette.teal),
                 const SizedBox(width: 8),
                 Text(
                   'Quick Add Task',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -76,8 +92,8 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
             Text(
               'Date: ${selectedDay.year}-${selectedDay.month.toString().padLeft(2, '0')}-${selectedDay.day.toString().padLeft(2, '0')}',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).subduedText,
-              ),
+                    color: Theme.of(context).subduedText,
+                  ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -91,15 +107,47 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
               ),
             ),
             const SizedBox(height: 10),
-            TextField(
-              controller: _tagsCtrl,
-              textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'Tags',
-                hintText: 'work, planning',
-                prefixIcon: Icon(Icons.sell_outlined),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedTagNames.isEmpty
+                        ? 'No tags selected'
+                        : selectedTagNames.join(', '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: selectedTagNames.isEmpty
+                              ? Theme.of(context).subduedText
+                              : null,
+                        ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _saving ? null : () => _selectTags(tagsState),
+                  icon: const Icon(Icons.sell_rounded),
+                  label: const Text('Select Tags'),
+                ),
+                TextButton(
+                  onPressed: _saving ? null : _openTagManager,
+                  child: const Text('Manage'),
+                ),
+              ],
             ),
+            if (selectedTagNames.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final name in selectedTagNames)
+                    Chip(
+                      label: Text(name),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -144,9 +192,18 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
                 style: FilledButton.styleFrom(
                   backgroundColor: AppPalette.teal,
                   foregroundColor: const Color(0xFF032A27),
-                  textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  textStyle: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800),
                 ),
-                onPressed: _saving ? null : () => _save(selectedDay),
+                onPressed: _saving
+                    ? null
+                    : () => _save(
+                          selectedDay,
+                          selectedTagNames: selectedTagNames,
+                          selectedTagIds: _selectedTagIds.toList(),
+                          holidays: holidays,
+                          showHolidayWarning: showHolidayWarning,
+                        ),
                 icon: _saving
                     ? const SizedBox(
                         width: 18,
@@ -180,16 +237,21 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
             Text(
               label.toUpperCase(),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                letterSpacing: 1,
-                color: Theme.of(context).subduedText,
-              ),
+                    letterSpacing: 1,
+                    color: Theme.of(context).subduedText,
+                  ),
             ),
             const SizedBox(height: 4),
             Row(
               children: [
-                const Icon(Icons.schedule_rounded, size: 16, color: AppPalette.teal),
+                const Icon(Icons.schedule_rounded,
+                    size: 16, color: AppPalette.teal),
                 const SizedBox(width: 6),
-                Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                Text(value,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
               ],
             ),
           ],
@@ -198,7 +260,13 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
     );
   }
 
-  Future<void> _save(DateTime selectedDay) async {
+  Future<void> _save(
+    DateTime selectedDay, {
+    required List<String> selectedTagNames,
+    required List<String> selectedTagIds,
+    required List<HolidayType> holidays,
+    required bool showHolidayWarning,
+  }) async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) return;
 
@@ -212,21 +280,45 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
       return;
     }
 
-    final tags = _tagsCtrl.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    if (showHolidayWarning && holidays.isNotEmpty) {
+      final names = holidays.map((h) => h.name).join(', ');
+      final proceed = await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: const Text('Schedule on holiday?'),
+                content: Text(
+                    'This day has holiday type(s): $names.\nDo you want to continue?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Continue'),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+      if (!proceed) return;
+    }
 
     setState(() => _saving = true);
     try {
-      await ref.read(taskListProvider.notifier).addQuickTask(
-        title: title,
-        dateLocal: selectedDay,
-        startMin: startMin,
-        endMin: endMin,
-        tags: tags,
-      );
+      final createdTask =
+          await ref.read(taskListProvider.notifier).addQuickTask(
+                title: title,
+                dateLocal: selectedDay,
+                startMin: startMin,
+                endMin: endMin,
+                tags: selectedTagNames,
+              );
+      await ref
+          .read(taskTagControllerProvider(createdTask.id).notifier)
+          .replaceTagIds(selectedTagIds);
 
       if (!mounted) return;
       HapticFeedback.lightImpact();
@@ -238,5 +330,101 @@ class _QuickAddTaskSheetState extends ConsumerState<QuickAddTaskSheet> {
       );
       setState(() => _saving = false);
     }
+  }
+
+  Future<void> _openTagManager() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const TagManagerSheet(),
+    );
+    if (!mounted) return;
+    await ref.read(tagControllerProvider.notifier).load();
+  }
+
+  Future<void> _selectTags(AsyncValue<List<TagItem>> tagsState) async {
+    final tags = tagsState.valueOrNull;
+    if (tags == null || tags.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No tags yet. Use Manage to create tags.')),
+      );
+      return;
+    }
+
+    var draft = <String>{..._selectedTagIds};
+    final selected = await showModalBottomSheet<Set<String>?>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: GlassContainer(
+                borderRadius: 24,
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const ListTile(
+                      leading: Icon(Icons.sell_rounded, color: AppPalette.teal),
+                      title: Text('Select Tags'),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final tag in tags)
+                            CheckboxListTile(
+                              value: draft.contains(tag.id),
+                              title: Text(tag.name),
+                              onChanged: (checked) {
+                                setModalState(() {
+                                  if (checked == true) {
+                                    draft.add(tag.id);
+                                  } else {
+                                    draft.remove(tag.id);
+                                  }
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(context).pop(draft),
+                            child: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (selected == null) return;
+    setState(() => _selectedTagIds = selected);
   }
 }

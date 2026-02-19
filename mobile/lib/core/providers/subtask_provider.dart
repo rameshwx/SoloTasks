@@ -82,17 +82,25 @@ class TaskSubtaskController
   }
 
   Future<void> markAllDone() async {
+    await _setAllDone(true);
+  }
+
+  Future<void> markAllUndone() async {
+    await _setAllDone(false);
+  }
+
+  Future<void> _setAllDone(bool done) async {
     final current = state.valueOrNull ?? await _fetchSubtasks();
-    final pending = current.where((subtask) => !subtask.isDone).toList();
-    if (pending.isEmpty) return;
+    final updates = current.where((subtask) => subtask.isDone != done).toList();
+    if (updates.isEmpty) return;
 
     await _ref.read(authedApiServiceProvider).run((accessToken) async {
-      for (final subtask in pending) {
+      for (final subtask in updates) {
         await _ref.read(apiClientProvider).updateTaskSubtask(
               accessToken: accessToken,
               taskId: taskId,
               subtaskId: subtask.id,
-              isDone: true,
+              isDone: done,
             );
       }
       return;

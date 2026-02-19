@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/models/app_models.dart';
+import '../../../core/models/user_preferences.dart';
 import '../../../core/providers/mock_data_provider.dart';
+import '../../../core/providers/user_preferences_provider.dart';
 import '../../../core/theme/app_palette.dart';
 import '../../../shared/widgets/aurora_background.dart';
 import '../../../shared/widgets/glass_container.dart';
@@ -21,6 +23,9 @@ class _HolidaysSettingsScreenState
     extends ConsumerState<HolidaysSettingsScreen> {
   late int _year;
   HolidayType _selectedType = HolidayType.public;
+  Map<DateTime, List<HolidayType>> _draft = <DateTime, List<HolidayType>>{};
+  bool _draftInitialized = false;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -31,6 +36,16 @@ class _HolidaysSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final holidayMap = _normalized(ref.watch(holidayDatesProvider));
+    final weekStart = ref
+            .watch(userPreferencesProvider)
+            .valueOrNull
+            ?.calendarPrefs
+            .weekStart ??
+        WeekStart.sunday;
+    if (!_draftInitialized) {
+      _draft = _normalized(holidayMap);
+      _draftInitialized = true;
+    }
 
     return Scaffold(
       body: AuroraBackground(
@@ -47,7 +62,7 @@ class _HolidaysSettingsScreenState
                   _yearRow(context),
                   const SizedBox(height: 12),
                   for (var month = 1; month <= 12; month++) ...[
-                    _monthCard(context, holidayMap, month),
+                    _monthCard(context, _draft, month, weekStart: weekStart),
                     const SizedBox(height: 14),
                   ],
                 ],
@@ -56,7 +71,7 @@ class _HolidaysSettingsScreenState
                 left: 16,
                 right: 16,
                 bottom: 86,
-                child: _bulkActionBar(context, holidayMap),
+                child: _bulkActionBar(context, _draft),
               ),
             ],
           ),
@@ -86,10 +101,12 @@ class _HolidaysSettingsScreenState
         ),
         const Spacer(),
         TextButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('Save',
-              style: TextStyle(
-                  fontWeight: FontWeight.w700, color: AppPalette.teal)),
+          onPressed: _saving ? null : _save,
+          child: Text(
+            _saving ? 'Saving...' : 'Save',
+            style: const TextStyle(
+                fontWeight: FontWeight.w700, color: AppPalette.teal),
+          ),
         ),
       ],
     );
@@ -185,7 +202,8 @@ class _HolidaysSettingsScreenState
   }
 
   Widget _monthCard(BuildContext context,
-      Map<DateTime, List<HolidayType>> holidayMap, int month) {
+      Map<DateTime, List<HolidayType>> holidayMap, int month,
+      {required WeekStart weekStart}) {
     final focused = DateTime(_year, month, 1);
 
     return GlassContainer(
@@ -211,7 +229,9 @@ class _HolidaysSettingsScreenState
             daysOfWeekVisible: true,
             availableGestures: AvailableGestures.none,
             rowHeight: 44,
-            startingDayOfWeek: StartingDayOfWeek.sunday,
+            startingDayOfWeek: weekStart == WeekStart.monday
+                ? StartingDayOfWeek.monday
+                : StartingDayOfWeek.sunday,
             headerVisible: false,
             selectedDayPredicate: (day) {
               final types = holidayMap[_key(day)] ?? const <HolidayType>[];
@@ -232,8 +252,7 @@ class _HolidaysSettingsScreenState
               } else {
                 map[key] = current;
               }
-
-              ref.read(holidayDatesProvider.notifier).replaceAll(map);
+              setState(() => _draft = _normalized(map));
             },
             calendarBuilders: CalendarBuilders(
               dowBuilder: (context, day) {
@@ -325,7 +344,7 @@ class _HolidaysSettingsScreenState
                     }
                   }
                 }
-                ref.read(holidayDatesProvider.notifier).replaceAll(cleared);
+                setState(() => _draft = _normalized(cleared));
               },
               icon: const Icon(Icons.delete_sweep_rounded,
                   color: AppPalette.danger),
@@ -354,12 +373,12 @@ class _HolidaysSettingsScreenState
                   }
                   map[targetKey] = existing;
                 }
-                ref.read(holidayDatesProvider.notifier).replaceAll(map);
+                setState(() => _draft = _normalized(map));
               },
               icon: const Icon(Icons.content_copy_rounded,
                   color: AppPalette.teal),
-              label: const Text('COPY 2023',
-                  style: TextStyle(
+              label: Text('COPY ${_year - 1}',
+                  style: const TextStyle(
                       color: AppPalette.teal, fontWeight: FontWeight.w800)),
             ),
           ),
@@ -393,5 +412,23 @@ class _HolidaysSettingsScreenState
     return {
       for (final entry in source.entries) _key(entry.key): [...entry.value],
     };
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(holidayDatesProvider.notifier).saveAll(_draft);
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save holidays: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 }
