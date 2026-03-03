@@ -1,8 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../logic/task_rules.dart';
+import '../models/app_models.dart';
 import '../models/remote_models.dart';
 import '../services/authed_api_service.dart';
 import 'api_provider.dart';
+import 'mock_data_provider.dart';
 
 final taskSubtaskControllerProvider = StateNotifierProvider.family<
     TaskSubtaskController, AsyncValue<List<SubtaskItem>>, String>(
@@ -20,12 +23,18 @@ class TaskSubtaskController
   final String taskId;
 
   Future<void> load() async {
+    await _refreshSubtasks();
+  }
+
+  Future<List<SubtaskItem>> _refreshSubtasks() async {
     state = const AsyncValue.loading();
     try {
       final subtasks = await _fetchSubtasks();
       state = AsyncValue.data(subtasks);
+      return subtasks;
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
+      rethrow;
     }
   }
 
@@ -66,7 +75,10 @@ class TaskSubtaskController
           );
       return;
     });
-    await load();
+    final subtasks = await _refreshSubtasks();
+    if (isDone == true) {
+      await _syncParentTaskCompletion(subtasks);
+    }
   }
 
   Future<void> deleteSubtask(String subtaskId) async {
@@ -123,7 +135,10 @@ class TaskSubtaskController
       }
       return;
     });
-    await load();
+    final subtasks = await _refreshSubtasks();
+    if (done) {
+      await _syncParentTaskCompletion(subtasks);
+    }
   }
 
   Future<List<SubtaskItem>> _fetchSubtasks() {
@@ -141,5 +156,27 @@ class TaskSubtaskController
       items.sort((a, b) => a.orderKey.compareTo(b.orderKey));
       return items;
     });
+  }
+
+  Future<void> _syncParentTaskCompletion(List<SubtaskItem> subtasks) async {
+    final tasks = _ref.read(taskListProvider);
+    final currentTask = tasks.cast<TaskViewModel?>().firstWhere(
+          (task) => task?.id == taskId,
+          orElse: () => null,
+        );
+    if (currentTask == null) return;
+
+    final doneCount = subtasks.where((subtask) => subtask.isDone).length;
+    final shouldComplete = shouldAutoCompleteParentTask(
+      done: doneCount,
+      total: subtasks.length,
+      currentStatus: currentTask.status,
+    );
+    if (!shouldComplete) return;
+
+    await _ref.read(taskListProvider.notifier).setTaskStatus(
+          taskId: taskId,
+          status: TaskStatus.done,
+        );
   }
 }

@@ -5,15 +5,15 @@ import '../core/providers/theme_mode_provider.dart';
 import '../core/theme/app_theme.dart';
 import 'router.dart';
 
-class SoloTasksApp extends ConsumerWidget {
-  const SoloTasksApp({super.key});
+class KronosApp extends ConsumerWidget {
+  const KronosApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
-      title: 'SoloTasks',
+      title: 'Kronos',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

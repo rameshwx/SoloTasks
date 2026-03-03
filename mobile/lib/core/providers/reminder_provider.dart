@@ -1,8 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/app_models.dart';
 import '../models/remote_models.dart';
 import '../services/authed_api_service.dart';
+import '../services/local_notification_service.dart';
 import 'api_provider.dart';
+import 'mock_data_provider.dart';
 
 final taskReminderControllerProvider = StateNotifierProvider.family<
     TaskReminderController,
@@ -20,12 +23,14 @@ class TaskReminderController
 
   final Ref _ref;
   final String taskId;
+  Set<String> _knownReminderIds = <String>{};
 
   Future<void> load() async {
     state = const AsyncValue.loading();
     try {
       final list = await _fetchTaskReminders();
       state = AsyncValue.data(list);
+      await _syncNotificationState(list);
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
     }
@@ -81,6 +86,40 @@ class TaskReminderController
       return;
     });
     await load();
+  }
+
+  Future<void> _syncNotificationState(List<ReminderItem> reminders) async {
+    final currentIds = reminders.map((item) => item.id).toSet();
+    final removedIds = _knownReminderIds.difference(currentIds);
+    _knownReminderIds = currentIds;
+
+    for (final reminderId in removedIds) {
+      try {
+        await localNotificationService.cancelReminder(reminderId);
+      } catch (_) {
+        // Keep reminder state stable even if notification cleanup fails.
+      }
+    }
+
+    final task = _currentTask();
+    if (task == null) return;
+
+    try {
+      await localNotificationService.syncTaskReminders(
+        task: task,
+        reminders: reminders,
+      );
+    } catch (_) {
+      // Keep reminder state stable even if local scheduling fails.
+    }
+  }
+
+  TaskViewModel? _currentTask() {
+    final tasks = _ref.read(taskListProvider);
+    return tasks.cast<TaskViewModel?>().firstWhere(
+          (item) => item?.id == taskId,
+          orElse: () => null,
+        );
   }
 
   Future<List<ReminderItem>> _fetchTaskReminders() {

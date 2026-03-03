@@ -222,7 +222,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 duration: 2.1.seconds),
         const SizedBox(height: 14),
         Text(
-          'CHRONOS',
+          'KRONOS',
           style: theme.textTheme.headlineSmall
               ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 1.2),
         ),
@@ -239,7 +239,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     setState(() => _submitting = true);
     try {
-      final response = await ref.read(apiClientProvider).requestOtp(email);
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.requestOtp(email);
       final data = _asMap(response.data);
       final cooldown = _toInt(data['cooldownSec']) ?? 60;
       final expiresAt = _parseDateTime(data['expiresAt']);
@@ -262,7 +263,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         });
         _startCooldownTicker();
       }
-      _showSnack(_extractErrorMessage(error));
+      _showSnack(
+        _extractErrorMessage(
+          error,
+          baseUrl: ref.read(apiClientProvider).baseUrl,
+        ),
+      );
     } catch (_) {
       _showSnack('Unable to request OTP right now.');
     } finally {
@@ -289,7 +295,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       final sessionService = ref.read(sessionServiceProvider);
       final deviceId = await sessionService.getOrCreateDeviceId();
       final deviceName = _deviceName();
-      final response = await ref.read(apiClientProvider).verifyOtp(
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.verifyOtp(
             email: email,
             otp: otp,
             deviceId: deviceId,
@@ -309,7 +316,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           );
       HapticFeedback.mediumImpact();
     } on DioException catch (error) {
-      _showSnack(_extractErrorMessage(error));
+      _showSnack(
+        _extractErrorMessage(
+          error,
+          baseUrl: ref.read(apiClientProvider).baseUrl,
+        ),
+      );
     } catch (_) {
       _showSnack('Unable to verify OTP right now.');
     } finally {
@@ -365,7 +377,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return null;
   }
 
-  String _extractErrorMessage(DioException error) {
+  String _extractErrorMessage(DioException error, {String? baseUrl}) {
     final payload = error.response?.data;
     if (payload is Map) {
       final detail = payload['detail'];
@@ -378,6 +390,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           return 'Please wait ${cooldown}s before requesting another OTP.';
         }
       }
+    }
+    if (error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout) {
+      final server = baseUrl ?? 'the server';
+      return 'Cannot reach $server. Check that the API is online and reachable from this device.';
     }
     return error.message ?? 'Request failed.';
   }

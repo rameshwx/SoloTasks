@@ -33,6 +33,16 @@ double? computeSubtaskProgress({
   return (done / total) * 100;
 }
 
+bool shouldAutoCompleteParentTask({
+  required int done,
+  required int total,
+  required TaskStatus currentStatus,
+}) {
+  if (total <= 0) return false;
+  if (done != total) return false;
+  return currentStatus != TaskStatus.done;
+}
+
 String nextOrderKey(String? prev, String? next) {
   if (prev == null && next == null) return 'm';
   if (prev == null) return '${next!}0';

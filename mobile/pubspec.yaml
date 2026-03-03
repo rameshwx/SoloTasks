@@ -1,5 +1,5 @@
 name: solotasks
-description: SoloTasks mobile app
+description: Kronos mobile app
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -43,6 +43,13 @@ dev_dependencies:
   riverpod_generator: ^2.6.5
   json_serializable: ^6.9.5
   freezed: ^3.0.6
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: ic_launcher.png
+  remove_alpha_ios: true

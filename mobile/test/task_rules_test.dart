@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:solotasks/core/models/app_models.dart';
 import 'package:solotasks/core/logic/task_rules.dart';
 
 void main() {
@@ -9,6 +10,28 @@ void main() {
 
     test('computes ratio correctly', () {
       expect(computeSubtaskProgress(done: 2, total: 4), 50);
+    });
+
+    test('marks parent task done when all subtasks are complete', () {
+      expect(
+        shouldAutoCompleteParentTask(
+          done: 3,
+          total: 3,
+          currentStatus: TaskStatus.todo,
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not auto-complete parent task when subtasks are incomplete', () {
+      expect(
+        shouldAutoCompleteParentTask(
+          done: 2,
+          total: 3,
+          currentStatus: TaskStatus.todo,
+        ),
+        isFalse,
+      );
     });
   });
 

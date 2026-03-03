@@ -109,13 +109,11 @@ class TodayTab extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           'Holiday: ${holidays.map((e) => e.name).join(', ')}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppPalette.danger,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppPalette.danger,
+                                  ),
                         ),
                       ),
                     ],
