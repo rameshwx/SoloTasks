@@ -30,6 +30,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
   bool _busyReminders = false;
   bool _busySubtasks = false;
   bool _busyTaskTags = false;
+  bool _busyTaskTitle = false;
   bool _busyDeleteTask = false;
 
   @override
@@ -176,12 +177,15 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                 ?.copyWith(color: AppPalette.teal, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
-          Text(
-            task.title,
-            style: Theme.of(context)
-                .textTheme
-                .displaySmall
-                ?.copyWith(fontWeight: FontWeight.w800),
+          GestureDetector(
+            onTap: _busyTaskTitle ? null : () => _editTaskTitle(task),
+            child: Text(
+              task.title,
+              style: Theme.of(context)
+                  .textTheme
+                  .displaySmall
+                  ?.copyWith(fontWeight: FontWeight.w800),
+            ),
           ),
           const SizedBox(height: 14),
           Row(
@@ -448,6 +452,7 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
                     child: _SubtaskTile(
                       subtask: subtask,
                       onToggle: () => _toggleSubtask(subtask),
+                      onEdit: () => _editSubtask(subtask),
                       dragHandle: ReorderableDragStartListener(
                         index: index,
                         child: Icon(
@@ -769,6 +774,62 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
     }
   }
 
+  Future<void> _editTaskTitle(TaskViewModel task) async {
+    final titleCtrl = TextEditingController(text: task.title);
+    try {
+      final nextTitle = await showDialog<String?>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Edit Task Title'),
+            content: TextField(
+              controller: titleCtrl,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+              decoration: const InputDecoration(
+                labelText: 'Title',
+                hintText: 'Task title',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(titleCtrl.text.trim()),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      );
+
+      final trimmed = nextTitle?.trim();
+      if (trimmed == null || trimmed.isEmpty || trimmed == task.title) return;
+
+      setState(() => _busyTaskTitle = true);
+      try {
+        await ref.read(taskListProvider.notifier).updateTaskTitle(
+              taskId: task.id,
+              title: trimmed,
+            );
+        await ref
+            .read(taskReminderControllerProvider(widget.taskId).notifier)
+            .load();
+        _snack('Task title updated');
+      } catch (error) {
+        _snack('Failed to update task title: $error');
+      } finally {
+        if (mounted) setState(() => _busyTaskTitle = false);
+      }
+    } finally {
+      titleCtrl.dispose();
+    }
+  }
+
   Future<void> _addSubtask() async {
     final draft = await _showSubtaskEditor();
     if (draft == null) return;
@@ -781,6 +842,38 @@ class _TaskDetailScreenState extends ConsumerState<TaskDetailScreen> {
       _snack('Subtask added');
     } catch (error) {
       _snack('Failed to add subtask: $error');
+    } finally {
+      if (mounted) setState(() => _busySubtasks = false);
+    }
+  }
+
+  Future<void> _editSubtask(SubtaskItem subtask) async {
+    final draft = await _showSubtaskEditor(
+      initialTitle: subtask.title,
+      initialNote: subtask.note,
+      isEdit: true,
+    );
+    if (draft == null) return;
+
+    final currentNote = subtask.note?.trim();
+    final normalizedCurrentNote =
+        currentNote == null || currentNote.isEmpty ? null : currentNote;
+    if (draft.title == subtask.title && draft.note == normalizedCurrentNote) {
+      return;
+    }
+
+    setState(() => _busySubtasks = true);
+    try {
+      await ref
+          .read(taskSubtaskControllerProvider(widget.taskId).notifier)
+          .updateSubtask(
+            subtaskId: subtask.id,
+            title: draft.title,
+            note: draft.note,
+          );
+      _snack('Subtask updated');
+    } catch (error) {
+      _snack('Failed to update subtask: $error');
     } finally {
       if (mounted) setState(() => _busySubtasks = false);
     }
@@ -1235,11 +1328,13 @@ class _SubtaskTile extends StatelessWidget {
   const _SubtaskTile({
     required this.subtask,
     required this.onToggle,
+    required this.onEdit,
     required this.dragHandle,
   });
 
   final SubtaskItem subtask;
   final VoidCallback onToggle;
+  final VoidCallback onEdit;
   final Widget dragHandle;
 
   @override
@@ -1272,32 +1367,36 @@ class _SubtaskTile extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  subtask.title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        decoration: done ? TextDecoration.lineThrough : null,
-                        color: done
-                            ? Theme.of(context).subduedText
-                            : Theme.of(context).colorScheme.onSurface,
-                      ),
-                ),
-                if (subtask.note != null && subtask.note!.trim().isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      subtask.note!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Theme.of(context).subduedText),
-                    ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onEdit,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subtask.title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          decoration: done ? TextDecoration.lineThrough : null,
+                          color: done
+                              ? Theme.of(context).subduedText
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
                   ),
-              ],
+                  if (subtask.note != null && subtask.note!.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        subtask.note!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Theme.of(context).subduedText),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           dragHandle,
